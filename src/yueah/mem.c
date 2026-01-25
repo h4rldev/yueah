@@ -166,7 +166,7 @@ temp_arena arena_scratch_get(mem_arena **conflicts, uint32_t num_conflicts) {
 
 void arena_scratch_release(temp_arena scratch) { temp_arena_end(scratch); }
 
-void *arena_strdup(mem_arena *arena, char *str, mem_t size) {
+void *arena_strdup(mem_arena *arena, const char *str, mem_t size) {
   char *dup = arena_push_array(arena, char, size);
   strlcpy(dup, str, size);
   return dup;

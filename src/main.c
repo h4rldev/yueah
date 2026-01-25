@@ -21,6 +21,12 @@
 #include <mem.h>
 #include <meta.h>
 
+static h2o_globalconf_t config;
+static h2o_context_t ctx;
+static h2o_multithread_receiver_t libmemcached_receiver;
+static h2o_accept_ctx_t accept_ctx;
+static mem_arena *arena;
+
 static h2o_pathconf_t *
 register_handler(h2o_hostconf_t *hostconf, const char *path,
                  int (*on_req)(h2o_handler_t *, h2o_req_t *)) {
@@ -30,12 +36,6 @@ register_handler(h2o_hostconf_t *hostconf, const char *path,
   return pathconf;
 }
 
-static h2o_globalconf_t config;
-static h2o_context_t ctx;
-static h2o_multithread_receiver_t libmemcached_receiver;
-static h2o_accept_ctx_t accept_ctx;
-
-mem_arena *arena;
 static void on_accept(uv_stream_t *listener, int status) {
   uv_tcp_t *conn;
   h2o_socket_t *sock;
@@ -55,7 +55,7 @@ static void on_accept(uv_stream_t *listener, int status) {
   h2o_accept(&accept_ctx, sock);
 }
 
-static int create_listener(char *ip, unsigned int port) {
+static int create_listener(const char *ip, const uint16_t port) {
   static uv_tcp_t listener;
   struct sockaddr_in addr;
   int r;
@@ -78,7 +78,8 @@ Error:
 }
 
 static int setup_ssl(const char *cert_file, const char *key_file,
-                     const char *ciphers, char *ip, bool use_memcached) {
+                     const char *ciphers, const char *ip,
+                     const bool use_memcached) {
   SSL_load_error_strings();
   SSL_library_init();
   OpenSSL_add_all_algorithms();
@@ -94,9 +95,7 @@ static int setup_ssl(const char *cert_file, const char *key_file,
     h2o_socket_ssl_async_resumption_setup_ctx(accept_ctx.ssl_ctx);
   }
 
-#ifdef SSL_CTX_set_ecdh_auto
   SSL_CTX_set_ecdh_auto(accept_ctx.ssl_ctx, 1);
-#endif
 
   /* load certificate and private key */
   if (SSL_CTX_use_certificate_chain_file(accept_ctx.ssl_ctx, cert_file) != 1) {

@@ -1,5 +1,5 @@
-#ifndef CLI_H_IMPLEMENTATION
-#define CLI_H_IMPLEMENTATION
+#ifndef YUEAH_CLI_H
+#define YUEAH_CLI_H
 
 #include <stdbool.h>
 
@@ -7,4 +7,4 @@
 
 int parse_args(int argc, char **argv, yueah_config_t **populated_args);
 
-#endif // !CLI_H_IMPLEMENTATION
+#endif // !YUEAH_CLI_H

@@ -1,5 +1,5 @@
-#ifndef YUEAH_MEM
-#define YUEAH_MEM
+#ifndef YUEAH_MEM_H
+#define YUEAH_MEM_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -40,7 +40,7 @@ void temp_arena_end(temp_arena temp);
 temp_arena arena_scratch_get(mem_arena **conflicts, uint32_t num_conflicts);
 void arena_scratch_release(temp_arena scratch);
 
-void *arena_strdup(mem_arena *arena, char *str, mem_t size);
+void *arena_strdup(mem_arena *arena, const char *str, mem_t size);
 
 #define arena_push(arena, size, ...)                                           \
   __arena_push_impl(arena, size,                                               \
@@ -51,4 +51,4 @@ void *arena_strdup(mem_arena *arena, char *str, mem_t size);
 #define arena_push_array(arena, T, num, ...)                                   \
   (T *)arena_push(arena, sizeof(T) * (num), __VA_ARGS__)
 
-#endif
+#endif // !YUEAH_MEM_H

@@ -1,18 +1,20 @@
-#ifndef CONFIG_H_IMPLEMENTATION
-#define CONFIG_H_IMPLEMENTATION
+#ifndef YUEAH_CONFIG_H
+#define YUEAH_CONFIG_H
 
 #include <mem.h>
 #include <stdbool.h>
 
+typedef enum { File, Console, Both } log_type_t;
+
 typedef struct {
   char *ip;
-  unsigned int port;
+  uint16_t port;
 } network_config_t;
 
 typedef struct {
   bool enabled;
-  unsigned int quality;
-  unsigned int min_size;
+  uint8_t quality;
+  mem_t min_size;
 } compression_config_t;
 
 typedef struct {
@@ -23,7 +25,7 @@ typedef struct {
 } ssl_config_t;
 
 typedef struct {
-  enum { File, Console, Both } log_type;
+  log_type_t log_type;
   network_config_t *network;
   compression_config_t *compression;
   ssl_config_t *ssl;
@@ -34,4 +36,4 @@ int init_config(mem_arena *arena, yueah_config_t **config);
 int read_config(mem_arena *arena, yueah_config_t **config);
 int write_config(yueah_config_t *config);
 
-#endif // !CONFIG_H_IMPLEMENTATION
+#endif // !YUEAH_CONFIG_H

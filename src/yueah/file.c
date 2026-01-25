@@ -1,13 +1,12 @@
-#include <mem.h>
-#include <regex.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+// #include <stdlib.h>
+// #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <file.h>
+#include <mem.h>
 
 char *get_cwd(void) {
   static char cwd[1024] = {0};
@@ -22,7 +21,7 @@ char *get_cwd(void) {
 
 int make_dir(const char *path) {
   if (mkdir(path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) == -1) {
-    fprintf(stderr, "Failed to create directory");
+    fprintf(stderr, "Failed to create directory @ path: %s\n", path);
     return -1;
   }
   return 0;
@@ -33,6 +32,7 @@ bool path_exist(const char *path) {
   return (stat(path, &sb) == 0);
 }
 
+/*
 bool is_dir(const char *path) {
   struct stat st;
   return (stat(path, &st) == 0 && S_ISDIR(st.st_mode));
@@ -53,7 +53,7 @@ char *read_file_from_fd(mem_arena *arena, FILE *file) {
   char *buf = arena_push_array(arena, char, file_size + 1);
 
   if (fread(buf, 1, file_size + 1, file) != file_size) {
-    fprintf(stderr, "Amount read is more or less than file_size, quitting");
+    fprintf(stderr, "Amount read is more or less than file_size, quitting\n");
     fclose(file);
     arena_pop_to(arena, pos);
     return NULL;
@@ -69,3 +69,4 @@ char *read_file(mem_arena *arena, const char *path) {
 
   return read_file_from_fd(arena, fp);
 }
+*/

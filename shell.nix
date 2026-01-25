@@ -3,7 +3,7 @@ with pkgs;
   mkShell {
     buildInputs = [
       cmake
-      jansson
+      yyjson
       zlib
       libuv
       libbsd
