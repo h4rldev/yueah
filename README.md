@@ -36,8 +36,16 @@ just ensure_h2o
 
 ### Building yueah
 
+#### Release
+
 ```bash
-just build
+just release
+```
+
+#### Debug
+
+```bash
+just debug
 ```
 
 ### Running
