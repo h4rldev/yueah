@@ -1,0 +1,51 @@
+set shell := ["bash", "-c"]
+set quiet := true
+
+src_dir := 'src'
+out_dir := 'out'
+bin_dir := '../bin'
+include_dir := '../include'
+link_flags := '-lbsd -lsqlite3'
+debug_compile_flags := '-ggdb -fsanitize=address -Wall -Werror -pedantic -Wno-variadic-macro-arguments-omitted'
+debug_link_flags := '-ggdb -fsanitize=address -static-libasan'
+release_compile_flags := '-O2 -flto'
+release_link_flags := '-O2 -flto'
+
+default:
+    just --list
+
+compile type="debug":
+    #!/usr/bin/env bash
+    [[ -d {{ out_dir }} ]] || mkdir -p {{ out_dir }}
+
+    if [[ {{ type }} == "debug" ]]; then
+        find {{ src_dir }} -name "*.c" -exec sh -c 'gcc -c "$1" -I {{ include_dir }} {{ debug_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-debug.o"' sh {} \;
+    else
+        find {{ src_dir }} -name "*.c" -exec sh -c 'gcc -c "$1" -I {{ include_dir }} {{ release_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-release.o"' sh {} \;
+    fi
+
+link type="debug":
+    #!/usr/bin/env bash
+    [[ -d {{ bin_dir }} ]] || mkdir -p {{ bin_dir }}
+
+    if [[ {{ type }} == "debug" ]]; then
+        gcc {{ out_dir }}/*-debug.o {{ link_flags }} {{ debug_link_flags }} -o {{ bin_dir }}/migrator-debug
+    else
+        gcc {{ out_dir }}/*-release.o {{ link_flags }} {{ release_link_flags }} -o {{ bin_dir }}/migrator
+    fi
+
+release:
+    just compile release
+    just link release
+
+debug:
+    just compile debug
+    just link debug
+
+migrate:
+    just release
+    {{ bin_dir }}/migrator ./migrator/migrations ./yueah.db
+
+bear:
+    bear -- just compile
+    sed -i 's|"/nix/store/[^"]*gcc[^"]*|\"gcc|g' compile_commands.json

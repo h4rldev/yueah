@@ -22,6 +22,7 @@ static int handle_parse_err(char *categ, char *field) {
 int init_config(mem_arena *arena, yueah_config_t **config) {
   yueah_config_t *local_config = arena_push_struct(arena, yueah_config_t);
 
+  local_config->db_path = arena_strdup(arena, "./yueah.db", 1024);
   local_config->log_type =
       Both; // Console, File, Both are the available options
   local_config->network = arena_push_struct(arena, network_config_t);
@@ -76,11 +77,9 @@ int write_config(yueah_config_t *config) {
   strlcpy(cwd_buf, cwd, 1024);
   snprintf(path, 1024, "%s%s", cwd_buf, default_path);
 
-  if (path_exist(path) == false) {
-    if (make_dir(path) != 0) {
+  if (!path_exist(path))
+    if (make_dir(path) != 0)
       return -1;
-    }
-  }
 
   strlcat(path, "config.json", 1024);
 
@@ -100,6 +99,11 @@ int write_config(yueah_config_t *config) {
 
   ssl_key = yyjson_mut_str(doc, "ssl");
   ssl_object = yyjson_mut_obj(doc);
+
+  if (config->db_path == NULL)
+    yyjson_mut_obj_add_str(doc, root, "db_path", "./yueah.db");
+  else
+    yyjson_mut_obj_add_str(doc, root, "db_path", config->db_path);
 
   switch (config->log_type) {
   case Both:
@@ -191,6 +195,8 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
 
   yyjson_doc *doc;
   yyjson_val *root;
+
+  yyjson_val *db_path_val;
   yyjson_val *log_type_val;
 
   yyjson_val *network_object;
@@ -208,6 +214,7 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
   yyjson_val *cert_path_val;
   yyjson_val *key_path_val;
 
+  char *db_path;
   log_type_t log_type;
 
   char *ip;
@@ -234,6 +241,7 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
   }
 
   yyjson_alc_pool_init(&alc, json_buf, KiB(10));
+
   local_config = arena_push_struct(arena, yueah_config_t);
   local_config->network = arena_push_struct(arena, network_config_t);
   local_config->compression = arena_push_struct(arena, compression_config_t);
@@ -252,6 +260,8 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
   }
 
   root = yyjson_doc_get_root(doc);
+
+  db_path_val = yyjson_obj_get(root, "db_path");
   log_type_val = yyjson_obj_get(root, "log_type");
 
   network_object = yyjson_obj_get(root, "network");
@@ -273,6 +283,11 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
     yyjson_doc_free(doc);
     fprintf(stderr, "Error parsing json, root is null\n");
     return -1;
+  }
+
+  if (!db_path_val || !yyjson_is_str(db_path_val)) {
+    yyjson_doc_free(doc);
+    return handle_parse_err("root", "db_path");
   }
 
   if (!log_type_val || !yyjson_is_str(log_type_val)) {
@@ -340,6 +355,7 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
     return handle_parse_err("ssl", "key_path");
   }
 
+  db_path = arena_strdup(arena, yyjson_get_str(db_path_val), 1024);
   if (strncasecmp("both", yyjson_get_str(log_type_val), 4) == 0)
     log_type = Both;
   else if (strncasecmp("file", yyjson_get_str(log_type_val), 4) == 0)
@@ -359,6 +375,7 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
   cert_path = arena_strdup(arena, yyjson_get_str(cert_path_val), 1024);
   key_path = arena_strdup(arena, yyjson_get_str(key_path_val), 1024);
 
+  local_config->db_path = db_path;
   local_config->log_type = log_type;
   local_config->network->ip = ip;
   local_config->network->port = port;

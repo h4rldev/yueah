@@ -7,7 +7,7 @@ bin_dir := 'bin'
 lib_dir := 'lib'
 include_dir := 'include'
 h2o_include := lib_dir + '/include'
-link_flags := '-lyyjson -lh2o -lssl -lcrypto -lz -luv -lm -lbrotlidec -lbrotlienc -lbsd -flto -std=c99 -fsanitize=address -ggdb -static-libasan'
+link_flags := '-lyyjson -lh2o -lssl -lcrypto -lz -luv -lm -lbrotlidec -lbrotlienc -lbsd -lsqlite3'
 debug_compile_flags := '-ggdb -fsanitize=address -Wall -Werror -pedantic -Wno-variadic-macro-arguments-omitted'
 debug_link_flags := '-ggdb -fsanitize=address -static-libasan'
 release_compile_flags := '-O2 -flto'
@@ -74,6 +74,9 @@ release:
 debug:
     just compile debug
     just link debug
+
+migrate:
+    just --justfile migrator/justfile migrate
 
 bear:
     bear -- just compile

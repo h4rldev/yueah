@@ -14,9 +14,11 @@
 #include <h2o/http1.h>
 #include <h2o/http2.h>
 #include <h2o/memcached.h>
+#include <sqlite3.h>
 
 #include <cli.h>
 #include <config.h>
+#include <db.h>
 #include <file.h>
 #include <mem.h>
 #include <meta.h>
@@ -26,6 +28,7 @@ static h2o_context_t ctx;
 static h2o_multithread_receiver_t libmemcached_receiver;
 static h2o_accept_ctx_t accept_ctx;
 static mem_arena *arena;
+static sqlite3 *db;
 
 static h2o_pathconf_t *
 register_handler(h2o_hostconf_t *hostconf, const char *path,
@@ -273,6 +276,12 @@ NotCompress:
             yueah_config->network->port, strerror(errno));
     goto Error;
   }
+
+  if (init_db(yueah_config, &db) != 0) {
+    fprintf(stderr, "failed to init db\n");
+  }
+
+  close_db(db);
 
   printf("yueah: running on %s:%u\n", yueah_config->network->ip,
          yueah_config->network->port);

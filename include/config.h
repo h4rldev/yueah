@@ -25,6 +25,7 @@ typedef struct {
 } ssl_config_t;
 
 typedef struct {
+  char *db_path;
   log_type_t log_type;
   network_config_t *network;
   compression_config_t *compression;
