@@ -173,8 +173,6 @@ int main(int argc, char **argv) {
   arena = arena_init(MiB(32), MiB(16));
 
   yueah_config_t *yueah_config;
-  char index_path[1024];
-
   time_t time_container = time(NULL);
   struct tm *time = localtime(&time_container);
   char log_fname[28] = {0};
@@ -185,7 +183,7 @@ int main(int argc, char **argv) {
   h2o_hostconf_t *hostconf = NULL;
   h2o_pathconf_t *pathconf = NULL;
 
-  snprintf(log_fname, 28, "./logs/toast-%d-%02d-%02d.log", time->tm_year + 1900,
+  snprintf(log_fname, 28, "./logs/yueah-%d-%02d-%02d.log", time->tm_year + 1900,
            time->tm_mon + 1, time->tm_mday);
 
   if (read_config(arena, &yueah_config) != 0) {
@@ -218,7 +216,7 @@ int main(int argc, char **argv) {
   signal(SIGPIPE, SIG_IGN);
 
   if (parse_args(argc, argv, &yueah_config) != 0) {
-    fprintf(stderr, "toast: failed parsing args, something is very wrong..\n");
+    fprintf(stderr, "yueah: failed parsing args, something is very wrong..\n");
     return -1;
   }
 

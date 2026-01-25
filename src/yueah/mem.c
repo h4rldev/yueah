@@ -116,7 +116,11 @@ void arena_pop_to(mem_arena *arena, mem_t pos) {
   arena_pop(arena, size);
 }
 
-void arena_clear(mem_arena *arena) { arena_pop_to(arena, ARENA_BASE_POS); }
+void arena_clear(mem_arena *arena) {
+  arena_pop_to(arena, ARENA_BASE_POS);
+  mem_decommit(arena, arena->committed);
+  mem_commit(arena, arena->committed);
+}
 
 temp_arena temp_arena_begin(mem_arena *arena) {
   return (temp_arena){.arena = arena, .start_pos = arena->position};
