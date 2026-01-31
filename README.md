@@ -4,17 +4,23 @@ A small blogging backend written in C.
 
 Utilizing:
 
-- [sqlite3](https://www.sqlite.org) for database functionality
+- [SQLite3](https://www.sqlite.org) for database functionality
 - [libh2o](https://h2o.examp1e.net) for HTTP server functionality
-- [Jansson](https://github.com/akheron/jansson) for JSON parsing
+- [yyjson](https://github.com/ibireme/yyjson) for JSON parsing
 
 ## Building
 
 ### Dependencies
 
+- [Just](https://github.com/casey/just) for building
 - [CMake](https://cmake.org) for building libH2O
+- [SQLite3](https://www.sqlite.org) for database functionality
 - [libh2o](https://h2o.examp1e.net) for HTTP server functionality
-- [jansson](https://github.com/akheron/jansson) for JSON parsing
+- [yyjson](https://github.com/ibireme/yyjson) for JSON parsing
+
+### yueah's migrator's Dependencies
+
+- [SQLite3](sqlite.org) for database functionality
 
 ### libH2O's dependencies
 
@@ -46,6 +52,32 @@ just release
 
 ```bash
 just debug
+```
+
+### Building yueah's migrator
+
+#### Prerequisite
+
+```bash
+cd migrator
+```
+
+#### Release
+
+```bash
+just release
+```
+
+#### Debug
+
+```bash
+just debug
+```
+
+### Running yueah's migrator
+
+```bash
+./bin/migrator -h
 ```
 
 ### Running
