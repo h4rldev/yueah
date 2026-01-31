@@ -1,16 +1,16 @@
 #include <mem.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/param.h>
 
 #if defined(__linux__)
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
 #endif
 
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/mman.h>
+#include <sys/param.h>
 #include <unistd.h>
 
 uint32_t mem_get_page_size(void) { return (uint32_t)sysconf(_SC_PAGESIZE); }
@@ -166,8 +166,8 @@ temp_arena arena_scratch_get(mem_arena **conflicts, uint32_t num_conflicts) {
 
 void arena_scratch_release(temp_arena scratch) { temp_arena_end(scratch); }
 
-void *arena_strdup(mem_arena *arena, const char *str, mem_t size) {
-  char *dup = arena_push_array(arena, char, size);
+char *arena_strdup(mem_arena *arena, const char *str, mem_t size) {
+  char *dup = arena_push_array(arena, char, size, false);
   strlcpy(dup, str, size);
   return dup;
 }

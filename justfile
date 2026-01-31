@@ -8,7 +8,7 @@ lib_dir := 'lib'
 include_dir := 'include'
 h2o_include := lib_dir + '/include'
 link_flags := '-lyyjson -lh2o -lssl -lcrypto -lz -luv -lm -lbrotlidec -lbrotlienc -lbsd -lsqlite3'
-debug_compile_flags := '-ggdb -fsanitize=address -Wall -Werror -pedantic -Wno-variadic-macro-arguments-omitted'
+debug_compile_flags := '-ggdb -fsanitize=address -Wall -Wextra -pedantic -Wno-variadic-macros'
 debug_link_flags := '-ggdb -fsanitize=address -static-libasan'
 release_compile_flags := '-O2 -flto'
 release_link_flags := '-O2 -flto'
@@ -79,5 +79,6 @@ migrate:
     just --justfile migrator/justfile migrate
 
 bear:
+    
     bear -- just compile
     sed -i 's|"/nix/store/[^"]*gcc[^"]*|\"gcc|g' compile_commands.json

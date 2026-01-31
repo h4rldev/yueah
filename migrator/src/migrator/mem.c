@@ -1,16 +1,17 @@
-#include <mem.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
-#include <sys/param.h>
+#include <migrator/log.h>
+#include <migrator/mem.h>
 
 #if defined(__linux__)
 #ifndef _DEFAULT_SOURCE
 #define _DEFAULT_SOURCE
 #endif
 
+#include <ctype.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
 #include <sys/mman.h>
+#include <sys/param.h>
 #include <unistd.h>
 
 uint32_t mem_get_page_size(void) { return (uint32_t)sysconf(_SC_PAGESIZE); }
@@ -18,7 +19,7 @@ uint32_t mem_get_page_size(void) { return (uint32_t)sysconf(_SC_PAGESIZE); }
 static void *mem_reserve(uint64_t size) {
   void *ret = mmap(NULL, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (ret == MAP_FAILED) {
-    fprintf(stderr, "Failed to mmap memory\n");
+    migrator_log(Error, false, "[MEM] Failed to mmap memory");
     return NULL;
   }
 
@@ -33,7 +34,7 @@ static bool mem_commit(void *ptr, uint64_t size) {
 static bool mem_decommit(void *ptr, uint64_t size) {
   int32_t ret = mprotect(ptr, size, PROT_NONE);
   if (ret != 0) {
-    fprintf(stderr, "Failed to mprotect memory\n");
+    migrator_log(Error, false, "[MEM] Failed to mprotect memory");
     return false;
   }
   ret = madvise(ptr, size, MADV_DONTNEED);
@@ -57,7 +58,7 @@ mem_arena *arena_init(mem_t reserve_size, mem_t commit_size) {
   mem_arena *arena = mem_reserve(reserve_size);
 
   if (!mem_commit(arena, commit_size)) {
-    fprintf(stderr, "Failed to commit memory\n");
+    migrator_log(Error, false, "[MEM] Failed to commit memory");
     return NULL;
   }
 
@@ -71,12 +72,14 @@ mem_arena *arena_init(mem_t reserve_size, mem_t commit_size) {
 
 void arena_destroy(mem_arena *arena) { mem_release(arena, arena->reserved); }
 
-void *__arena_push_impl(mem_arena *arena, uint64_t size, bool non_zero) {
+void *arena_push(mem_arena *arena, uint64_t size, bool non_zero) {
   uint64_t pos_aligned = ALIGN_UP_TO_POW2(arena->position, ARENA_ALIGN);
   uint64_t new_pos = pos_aligned + size;
 
   if (new_pos > arena->reserved) {
-    fprintf(stderr, "Failed to allocate memory, pos is larger than reserved\n");
+    migrator_log(
+        Error, false,
+        "[MEM] Failed to allocate memory, pos is larger than reserved");
     return NULL;
   }
 
@@ -90,7 +93,7 @@ void *__arena_push_impl(mem_arena *arena, uint64_t size, bool non_zero) {
     uint64_t commit_size = new_commit_pos - arena->commit_position;
 
     if (!mem_commit(mem, commit_size)) {
-      fprintf(stderr, "Failed to commit memory\n");
+      migrator_log(Error, false, "[MEM] Failed to commit memory");
       return NULL;
     }
 
@@ -138,12 +141,11 @@ temp_arena arena_scratch_get(mem_arena **conflicts, uint32_t num_conflicts) {
   for (int32_t i = 0; i < 2; i++) {
     bool found = false;
 
-    for (uint32_t j = 0; j < num_conflicts; j++) {
+    for (uint32_t j = 0; j < num_conflicts; j++)
       if (conflicts[j] == __scratch_arenas[i]) {
         found = true;
         break;
       }
-    }
 
     if (!found) {
       scratch_id = i;
@@ -151,23 +153,67 @@ temp_arena arena_scratch_get(mem_arena **conflicts, uint32_t num_conflicts) {
     }
   }
 
-  if (scratch_id == -1) {
+  if (scratch_id == -1)
     return (temp_arena){0};
-  }
 
   mem_arena **selected = &__scratch_arenas[scratch_id];
 
-  if (*selected == NULL) {
+  if (*selected == NULL)
     *selected = arena_init(MiB(64), MiB(1));
-  }
 
   return temp_arena_begin(*selected);
 }
 
 void arena_scratch_release(temp_arena scratch) { temp_arena_end(scratch); }
 
-void *arena_strdup(mem_arena *arena, const char *str, mem_t size) {
-  char *dup = arena_push_array(arena, char, size);
+char *arena_strdup(mem_arena *arena, const char *str, mem_t size) {
+  char *dup = arena_push_array(arena, char, size, false);
   strlcpy(dup, str, size);
   return dup;
+}
+
+static char *trim_whitespace(const char *str, int len) {
+  char *buf = (char *)str;
+  while (len > 0 && isspace((unsigned char)buf[len - 1]))
+    len--; // trailing
+  while (len > 0 && isspace((unsigned char)*buf)) {
+    buf++;
+    len--;
+  } // leading
+  return buf;
+}
+
+char **arena_split_by_delim(mem_arena *arena, const char *str, char delim,
+                            int *res_count) {
+  char **tokens = NULL;
+  const char *start;
+  char *end, *token, *token_start;
+
+  mem_t count = 0, idx = 0, len = 0, token_len = 0;
+
+  for (const char *p = str; *p; p++) {
+    if (*p == delim)
+      count++;
+  }
+
+  // Allocate array of char* in arena
+  tokens = arena_push_array(arena, char *, count, false);
+  start = str;
+
+  // Extract each token (always including the delimiter)
+  while ((end = strchr(start, delim)) != NULL) {
+    len = end - start + 1;
+    token_start = trim_whitespace(start, len - 1); // exclude delim
+    token_len = (end - token_start) + 1;           // include delim
+
+    token = arena_push_array(arena, char, token_len + 1, false);
+    memcpy(token, token_start, token_len);
+    token[token_len] = '\0';
+    tokens[idx++] = token;
+
+    start = end + 1;
+  }
+
+  *res_count = count;
+  return tokens;
 }

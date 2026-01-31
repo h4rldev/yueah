@@ -41,6 +41,8 @@ temp_arena arena_scratch_get(mem_arena **conflicts, uint32_t num_conflicts);
 void arena_scratch_release(temp_arena scratch);
 
 char *arena_strdup(mem_arena *arena, const char *str, mem_t size);
+char **arena_split_by_delim(mem_arena *arena, const char *str, char delim,
+                            int *res_count);
 
 #define arena_push_struct(arena, T, nz)                                        \
   (T *)arena_push((arena), sizeof(T), (nz))

@@ -1,6 +1,8 @@
 #ifndef YUEAH_MIGRATOR_LOG_H
 #define YUEAH_MIGRATOR_LOG_H
 
+#include <stdbool.h>
+
 typedef enum {
   Error,
   Warning,
@@ -10,14 +12,14 @@ typedef enum {
 
 #ifndef YUEAH_MIGRATOR_NO_LOG_COLORS
 #define COLOR_RESET "\x1b[0m"
-#define COLOR_RED "\x1b[31m"
-#define COLOR_GREEN "\x1b[32m"
-#define COLOR_YELLOW "\x1b[33m"
-#define COLOR_BLUE "\x1b[34m"
-#define COLOR_CYAN "\x1b[36m"
+#define FG_TRANS "\x1b[30m"
+#define COLOR_RED "\x1b[41m"
+#define COLOR_GREEN "\x1b[42m"
+#define COLOR_YELLOW "\x1b[43m"
+#define COLOR_BLUE "\x1b[44m"
+#define COLOR_CYAN "\x1b[46m"
 #endif
 
-void migrator_log_time(log_level_t level, const char *fmt, ...);
-void migrator_log(log_level_t level, const char *fmt, ...);
+void migrator_log(log_level_t level, bool time, const char *fmt, ...);
 
 #endif // !YUEAH_MIGRATOR_LOG_H
