@@ -41,7 +41,7 @@ static int validate_migration_format(migration_t *migrations, mem_t len) {
   // Use first migration to determine expected format
   id_type_t expected_format = identify_id(migrations[0].identifier);
   migrator_log(Debug, false, "Expected migration format: %lu",
-               migrations[-1].identifier);
+               migrations[0].identifier);
 
   // Check all migrations match
   for (mem_t i = 1; i < len; i++) {
@@ -233,7 +233,7 @@ int run_sql(mem_arena *arena, sqlite3 *db, char *sql) {
 
   migrator_log(Debug, false, "Running %d sql statements", token_count);
   for (int i = 0; i < token_count; i++) {
-    migrator_log(Debug, false, "Running sql: %s", tokens[i]);
+    // migrator_log(Debug, false, "Running sql: %s", tokens[i]);
     rc = sqlite3_prepare_v2(db, tokens[i], -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
       migrator_log(Error, false, "sqlite3_prepare_v2 failed: %d:%s",
@@ -244,7 +244,7 @@ int run_sql(mem_arena *arena, sqlite3 *db, char *sql) {
     if (handle_step(db, rc) < 0)
       goto Error;
 
-    migrator_log(Debug, false, "Wrote %s to db", tokens[i]);
+    // migrator_log(Debug, false, "Wrote %s to db", tokens[i]);
     if (stmt)
       sqlite3_finalize(stmt);
   }
@@ -344,7 +344,7 @@ migration_t *find_migrations(mem_arena *arena, const char *path,
   }
 
   for (mem_t migration_idx = 0; migration_idx < entry_idx; migration_idx++)
-    migrator_log(Debug, false, "Found %s", migrations[migration_idx].path);
+    migrator_log(Info, false, "Found %s", migrations[migration_idx].path);
 
   *file_count = entry_idx;
   return migrations;

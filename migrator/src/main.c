@@ -1,5 +1,4 @@
 #include <stddef.h>
-#include <string.h>
 
 #include <migrator/cli.h>
 #include <migrator/file.h>
@@ -17,13 +16,13 @@ int apply_migration(sqlite3 *db, char *sql, int user_version) {
   if (set_user_version(db, user_version) < 0)
     return -1;
 
-  migrator_log(Debug, false, "New version = %d", get_user_version(db));
+  // migrator_log(Debug, false, "New version = %d", get_user_version(db));
 
   migrator_log(Debug, false, "Beginning transaction");
   if (begin_transaction(db) < 0)
     return -1;
 
-  migrator_log(Debug, false, "Running sql: %s", sql);
+  // migrator_log(Debug, false, "Running sql: %s", sql);
   migrator_log(Debug, false, "Running sql");
   if (run_sql(arena, db, sql) < 0)
     return -1;
@@ -95,22 +94,19 @@ int migrate(void) {
   }
 
   for (mem_t i = 0; i < file_count; i++) {
-    mem_t migration_idx =
-        user_version + i; // This is the VERSION number (1-indexed)
-    mem_t array_idx = migration_idx - 1; // Convert to array index (0-indexed)
+    migrator_log(Debug, false, "File count: %lu", file_count);
 
-    if (migration_idx == (mem_t)user_version || migration_idx > file_count)
-      continue;
+    if (file_count == (mem_t)user_version - 1)
+      break;
+
+    mem_t migration_idx =
+        user_version + 1; // This is the VERSION number (1-indexed)
+    mem_t array_idx = i;  // Convert to array index (0-indexed)
 
     // The version to set is migration_idx (which equals user_version + i + 1
     // conceptually)
 
     mem_t next_version = migration_idx;
-
-    migrator_log(Info, false, "Migration idx: %lu", migration_idx);
-    migrator_log(Info, false, "Array index: %lu", array_idx);
-    migrator_log(Info, false, "Applying migration %s",
-                 migrations[array_idx].path);
 
     if (apply_migration(db, sql_bufs[array_idx], next_version) < 0) {
       migrator_log(Error, false, "apply_migration failed");
@@ -120,6 +116,9 @@ int migrate(void) {
       }
       return -1;
     }
+
+    user_version = next_version;
+    migrator_log(Debug, false, "User version is now: %lu", user_version);
   }
 
   if (db_disconnect(db) < 0) {
