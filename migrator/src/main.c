@@ -1,4 +1,5 @@
 #include <stddef.h>
+#include <string.h>
 
 #include <migrator/cli.h>
 #include <migrator/file.h>
@@ -48,6 +49,7 @@ int migrate(void) {
   migrator_log(Info, false, "Crawling %s for migrations", migrations_path);
   migration_t *migrations =
       find_migrations(arena, migrations_path, &file_count);
+
   if (!migrations) {
     migrator_log(Error, false, "crawl_one_dir failed");
     return -1;
@@ -84,11 +86,11 @@ int migrate(void) {
 
   sql_bufs = arena_push_array(arena, char *, file_count, false);
 
-  mem_t *file_sizes = arena_push_array(arena, mem_t, file_count, false);
+  mem_t file_size = 0;
   for (mem_t file_idx = 0; file_idx < file_count; file_idx++) {
     sql_bufs[file_idx] =
-        read_file(arena, migrations[file_idx].path, &file_sizes[file_idx]);
-    migrator_log(Debug, false, "Read %lu bytes from %s", file_sizes[file_idx],
+        read_file(arena, migrations[file_idx].path, &file_size);
+    migrator_log(Debug, false, "Read %lu bytes from %s", file_size,
                  migrations[file_idx].path);
   }
 
@@ -97,10 +99,16 @@ int migrate(void) {
         user_version + i; // This is the VERSION number (1-indexed)
     mem_t array_idx = migration_idx - 1; // Convert to array index (0-indexed)
 
+    if (migration_idx == (mem_t)user_version || migration_idx > file_count)
+      continue;
+
     // The version to set is migration_idx (which equals user_version + i + 1
     // conceptually)
+
     mem_t next_version = migration_idx;
 
+    migrator_log(Info, false, "Migration idx: %lu", migration_idx);
+    migrator_log(Info, false, "Array index: %lu", array_idx);
     migrator_log(Info, false, "Applying migration %s",
                  migrations[array_idx].path);
 
@@ -113,6 +121,7 @@ int migrate(void) {
       return -1;
     }
   }
+
   if (db_disconnect(db) < 0) {
     migrator_log(Error, false, "db_disconnect failed");
     return -1;
@@ -141,6 +150,15 @@ int main(int argc, char **argv) {
 
   if (db_args->clear_migrations && db_args->create_db == false)
     clear_migrations(db_args->db_path);
+
+  if (db_args->migration_name && db_args->migrations_path) {
+    if (create_migration_file(arena, db_args->migration_name,
+                              db_args->migrations_path) < 0)
+      return_status = -1;
+    else
+      return_status = 0;
+    goto End;
+  }
 
   return_status = migrate();
   if (return_status < 0) {

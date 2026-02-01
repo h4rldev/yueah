@@ -6,11 +6,9 @@
 #include <mem.h>
 
 typedef struct {
-  char *migrations_path;
-  char *db_path;
+  char *migrations_path, *db_path, *migration_name;
   int return_status;
-  bool create_db;
-  bool clear_migrations;
+  bool create_db, clear_migrations;
 } db_args_t;
 
 db_args_t *parse_args(mem_arena *arena, int argc, char **argv);

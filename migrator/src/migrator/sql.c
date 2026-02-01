@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <sqlite3.h>
@@ -15,7 +16,6 @@
 #include <migrator/sql.h>
 
 /// Utility functions
-
 static int compare_identifiers(const void *a, const void *b) {
   const migration_t *mig_a = (const migration_t *)a;
   const migration_t *mig_b = (const migration_t *)b;
@@ -28,7 +28,7 @@ static int compare_identifiers(const void *a, const void *b) {
 }
 
 static id_type_t identify_id(mem_t id) {
-  if (id < 19700101000000ULL)
+  if (id < 19700101000000)
     return ID_U64;
 
   return TIMESTAMP_U64;
@@ -40,15 +40,17 @@ static int validate_migration_format(migration_t *migrations, mem_t len) {
 
   // Use first migration to determine expected format
   id_type_t expected_format = identify_id(migrations[0].identifier);
+  migrator_log(Debug, false, "Expected migration format: %lu",
+               migrations[-1].identifier);
 
   // Check all migrations match
   for (mem_t i = 1; i < len; i++) {
     id_type_t current_format = identify_id(migrations[i].identifier);
 
     if (current_format != expected_format) {
-      migrator_log(Error, false, "Mixed migration formats found!\n");
+      migrator_log(Error, false, "Mixed migration formats found!");
       migrator_log(
-          Error, false, "Migration '%s' uses %s format, but expected %s\n",
+          Error, false, "Migration '%s' uses %s format, but expected %s",
           migrations[i].path,
           current_format == TIMESTAMP_U64 ? "timestamp" : "sequential ID",
           expected_format == TIMESTAMP_U64 ? "timestamp" : "sequential ID");
@@ -281,7 +283,6 @@ Error:
 }
 
 /// IO
-
 migration_t *find_migrations(mem_arena *arena, const char *path,
                              mem_t *file_count) {
   migration_t *migrations;
@@ -342,8 +343,52 @@ migration_t *find_migrations(mem_arena *arena, const char *path,
     return NULL;
   }
 
+  for (mem_t migration_idx = 0; migration_idx < entry_idx; migration_idx++)
+    migrator_log(Debug, false, "Found %s", migrations[migration_idx].path);
+
   *file_count = entry_idx;
   return migrations;
+}
+
+int create_migration_file(mem_arena *arena, char *name, char *path) {
+  temp_arena temp;
+  int rc = 0;
+  time_t now;
+  FILE *fp;
+  struct tm *time_;
+  mem_t path_len;
+  char *final_path, *path_buf;
+
+  temp = temp_arena_begin(arena);
+  now = time(NULL);
+  time_ = localtime(&now);
+
+  path_len = strlen(path);
+  path_buf = arena_push_array(arena, char, path_len + 2, false);
+  if (path_len > 0 && path[path_len] != '/') {
+    snprintf(path_buf, path_len + 2, "%s/", path);
+  } else {
+    strlcpy(path_buf, path, path_len);
+  }
+
+  final_path = arena_push_array(arena, char, 1024, false);
+  snprintf(final_path, 1024, "%s%d%02d%02d%02d%02d%02d_%s.sql", path_buf,
+           time_->tm_year + 1900, time_->tm_mon + 1, time_->tm_mday,
+           time_->tm_hour, time_->tm_min, time_->tm_sec, name);
+
+  fp = fopen(final_path, "w");
+  if (!fp) {
+    migrator_log(Error, false, "Failed to create migration file: %s",
+                 final_path);
+    rc = -1;
+    goto End;
+  }
+
+  migrator_log(Info, false, "Created migration file: %s", final_path);
+
+End:
+  temp_arena_end(temp);
+  return rc;
 }
 
 /// !IO

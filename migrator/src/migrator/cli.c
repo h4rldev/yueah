@@ -1,7 +1,6 @@
 #include <getopt.h>
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #include <migrator/cli.h>
@@ -16,12 +15,12 @@ void print_usage(void) {
          "Options:\n"
          "  -h, --help\t\tShow this help message and exit\n"
          "  -v, --version\t\tShow version information and exit\n"
-         "  -n, --new\t\tCreate a new migration file\n"
          "  -c, --create\t\tCreate database file if it doesn't exist\n"
          "  -r, --remove\t\tClear migrations\n"
          "\n"
          "  -m, --migrations\tPath to migration files\n"
          "  -d, --db\t\tPath to database file\n"
+         "  -n, --new\t\tCreate a new migration file with name\n"
          "\n"
          "Made with <3 by %s\n",
          PROG_NAME, PROG_AUTHOR);
@@ -32,15 +31,17 @@ void print_version(void) { printf("%s %s\n", PROG_NAME, PROG_VERSION); }
 db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
   int option_index = 0;
   char arg = 0;
+  bool making_new_migration = false;
   db_args_t *db_args;
 
   char temp_migrations_path[1024] = {0};
   char temp_db_path[1024] = {0};
+  char temp_migration_name[1024] = {0};
 
   static struct option long_options[] = {
       {"help", no_argument, NULL, 'h'},
       {"version", no_argument, NULL, 'v'},
-      {"new", no_argument, NULL, 'n'},
+      {"new", required_argument, NULL, 'n'},
       {"create", no_argument, NULL, 'c'},
       {"remove", no_argument, NULL, 'r'},
       {"migrations", required_argument, NULL, 'm'},
@@ -51,10 +52,10 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
   db_args = arena_push_struct(arena, db_args_t, false);
   if (argc < 2) {
     print_usage();
-    exit(0);
+    goto Ok;
   }
 
-  while ((arg = getopt_long(argc, argv, ":hvm:d:r", long_options,
+  while ((arg = getopt_long(argc, argv, ":hvm:d:n:r", long_options,
                             &option_index)) != -1) {
     switch (arg) {
     case 'v':
@@ -73,8 +74,20 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
       db_args->clear_migrations = true;
       break;
 
+    case 'n':
+      if (!optarg) {
+        migrator_log(Error, false, "(--new/-n) requires a migration name");
+        print_usage();
+        goto Error;
+      }
+
+      making_new_migration = true;
+      strlcpy(temp_migration_name, optarg, 1024);
+      break;
+
     case 'm':
-      if (optarg == NULL) {
+      if (!optarg) {
+        migrator_log(Error, false, "(--migrations/-m) requires a path");
         print_usage();
         goto Error;
       }
@@ -83,7 +96,8 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
       break;
 
     case 'd':
-      if (optarg == NULL) {
+      if (!optarg) {
+        migrator_log(Error, false, "(--db/-d) requires a path");
         print_usage();
         goto Error;
       }
@@ -103,13 +117,22 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
     }
   }
 
-  if ((!temp_db_path[0] || !temp_migrations_path[0]) && optind != argc - 2) {
+  if ((strlen(temp_db_path) == 0 || strlen(temp_migrations_path) == 0) &&
+      optind != argc - 2 && making_new_migration == false) {
+    printf("temp_db_path: %s\n", !temp_db_path[0] ? "empty" : "full");
+    printf("temp_migrations_path: %s\n",
+           temp_migrations_path[0] == 0 ? "empty" : "full");
+    printf("optind: %d\n", optind);
+    printf("argc: %d\n", argc);
+    printf("making_new_migration: %s\n",
+           making_new_migration ? "true" : "false");
+
     migrator_log(Error, false, "Missing path arguments\n");
     print_usage();
     goto Error;
   }
 
-  if (temp_migrations_path[0]) {
+  if (temp_migrations_path[0] != 0) {
     if (!is_path(temp_migrations_path)) {
       migrator_log(Error, false, "migrations_path is not a path\n");
       print_usage();
@@ -117,7 +140,7 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
     }
 
     db_args->migrations_path = arena_strdup(arena, temp_migrations_path, 1024);
-  } else {
+  } else if (temp_migrations_path[0] == 0 && optind != argc - 2) {
     if (!is_path(argv[optind])) {
       migrator_log(Error, false, "migrations_path is not a path\n");
       print_usage();
@@ -127,7 +150,7 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
     db_args->migrations_path = arena_strdup(arena, argv[optind], 1024);
   }
 
-  if (temp_db_path[0]) {
+  if (temp_db_path[0] != 0) {
     if (!is_path(temp_db_path) && db_args->create_db == false) {
       migrator_log(Error, false, "db_path is not a path\n");
       print_usage();
@@ -135,7 +158,7 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
     }
 
     db_args->db_path = arena_strdup(arena, temp_db_path, 1024);
-  } else {
+  } else if (temp_db_path[0] == 0 && making_new_migration == false) {
     if (!is_path(argv[optind + 1]) && db_args->create_db == false) {
       migrator_log(Error, false, "db_path is not a path\n");
       print_usage();
@@ -144,6 +167,9 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
 
     db_args->db_path = arena_strdup(arena, argv[optind + 1], 1024);
   }
+
+  if (temp_migration_name[0] && temp_migrations_path[0])
+    db_args->migration_name = arena_strdup(arena, temp_migration_name, 1024);
 
 Ok:
   db_args->return_status = 0;

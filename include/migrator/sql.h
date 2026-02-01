@@ -22,10 +22,10 @@ int set_user_version(sqlite3 *db, int user_version);
 int begin_transaction(sqlite3 *db);
 int run_sql(mem_arena *arena, sqlite3 *db, char *sql);
 int commit_transaction(sqlite3 *db);
-
 /// IO
 migration_t *find_migrations(mem_arena *arena, const char *path,
                              mem_t *file_count);
+int create_migration_file(mem_arena *arena, char *name, char *path);
 /// !IO
 
 #endif // !YUEAH_MIGRATOR_SQL_H

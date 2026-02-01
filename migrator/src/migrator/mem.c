@@ -174,12 +174,14 @@ char *arena_strdup(mem_arena *arena, const char *str, mem_t size) {
 
 static char *trim_whitespace(const char *str, int len) {
   char *buf = (char *)str;
+
   while (len > 0 && isspace((unsigned char)buf[len - 1]))
-    len--; // trailing
+    len--;
   while (len > 0 && isspace((unsigned char)*buf)) {
     buf++;
     len--;
-  } // leading
+  }
+
   return buf;
 }
 
@@ -196,15 +198,13 @@ char **arena_split_by_delim(mem_arena *arena, const char *str, char delim,
       count++;
   }
 
-  // Allocate array of char* in arena
   tokens = arena_push_array(arena, char *, count, false);
   start = str;
 
-  // Extract each token (always including the delimiter)
   while ((end = strchr(start, delim)) != NULL) {
     len = end - start + 1;
-    token_start = trim_whitespace(start, len - 1); // exclude delim
-    token_len = (end - token_start) + 1;           // include delim
+    token_start = trim_whitespace(start, len - 1);
+    token_len = (end - token_start) + 1;
 
     token = arena_push_array(arena, char, token_len + 1, false);
     memcpy(token, token_start, token_len);

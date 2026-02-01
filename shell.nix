@@ -1,6 +1,9 @@
 {pkgs ? import <nixpkgs> {}}:
 with pkgs;
   mkShell {
+    name = "yueah";
+    description = "A small blogging backend";
+
     buildInputs = [
       cmake
       yyjson
