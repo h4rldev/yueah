@@ -233,7 +233,7 @@ int run_sql(mem_arena *arena, sqlite3 *db, char *sql) {
 
   migrator_log(Debug, false, "Running %d sql statements", token_count);
   for (int i = 0; i < token_count; i++) {
-    // migrator_log(Debug, false, "Running sql: %s", tokens[i]);
+    migrator_log(Debug, false, "Running sql: %s", tokens[i]);
     rc = sqlite3_prepare_v2(db, tokens[i], -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
       migrator_log(Error, false, "sqlite3_prepare_v2 failed: %d:%s",

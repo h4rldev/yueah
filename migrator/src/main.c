@@ -16,13 +16,10 @@ int apply_migration(sqlite3 *db, char *sql, int user_version) {
   if (set_user_version(db, user_version) < 0)
     return -1;
 
-  // migrator_log(Debug, false, "New version = %d", get_user_version(db));
-
   migrator_log(Debug, false, "Beginning transaction");
   if (begin_transaction(db) < 0)
     return -1;
 
-  // migrator_log(Debug, false, "Running sql: %s", sql);
   migrator_log(Debug, false, "Running sql");
   if (run_sql(arena, db, sql) < 0)
     return -1;
@@ -116,6 +113,8 @@ int migrate(void) {
       }
       return -1;
     }
+
+    migrator_log(Info, false, "Applied Migration %s", migrations[i].path);
 
     user_version = next_version;
     migrator_log(Debug, false, "User version is now: %lu", user_version);
