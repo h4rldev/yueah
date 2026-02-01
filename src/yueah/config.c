@@ -20,25 +20,27 @@ static int handle_parse_err(char *categ, char *field) {
 }
 
 int init_config(mem_arena *arena, yueah_config_t **config) {
-  yueah_config_t *local_config = arena_push_struct(arena, yueah_config_t);
+  yueah_config_t *local_config =
+      arena_push_struct(arena, yueah_config_t, false);
 
   local_config->db_path = arena_strdup(arena, "./yueah.db", 1024);
   local_config->log_type =
       Both; // Console, File, Both are the available options
-  local_config->network = arena_push_struct(arena, network_config_t);
+  local_config->network = arena_push_struct(arena, network_config_t, false);
   local_config->network->ip = arena_strdup(arena, "127.0.0.1", 16);
   local_config->network->port = 8080;
 
-  local_config->compression = arena_push_struct(arena, compression_config_t);
+  local_config->compression =
+      arena_push_struct(arena, compression_config_t, false);
   local_config->compression->enabled = true;
   local_config->compression->quality = 6;
   local_config->compression->min_size = 1000;
 
-  local_config->ssl = arena_push_struct(arena, ssl_config_t);
+  local_config->ssl = arena_push_struct(arena, ssl_config_t, false);
   local_config->ssl->enabled = false;
   local_config->ssl->mem_cached = false;
-  local_config->ssl->cert_path = arena_push_array(arena, char, 1024);
-  local_config->ssl->key_path = arena_push_array(arena, char, 1024);
+  local_config->ssl->cert_path = arena_push_array(arena, char, 1024, false);
+  local_config->ssl->key_path = arena_push_array(arena, char, 1024, false);
 
   *config = local_config;
 
@@ -125,7 +127,7 @@ int write_config(yueah_config_t *config) {
   else
     yyjson_mut_obj_add_str(doc, network_object, "ip", config->network->ip);
 
-  if (config->network->port == 0 || config->network->port > 65535)
+  if (config->network->port == 0 || !config->network->port)
     yyjson_mut_obj_add_int(doc, network_object, "port", 8080);
   else
     yyjson_mut_obj_add_int(doc, network_object, "port", config->network->port);
@@ -242,10 +244,11 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
 
   yyjson_alc_pool_init(&alc, json_buf, KiB(10));
 
-  local_config = arena_push_struct(arena, yueah_config_t);
-  local_config->network = arena_push_struct(arena, network_config_t);
-  local_config->compression = arena_push_struct(arena, compression_config_t);
-  local_config->ssl = arena_push_struct(arena, ssl_config_t);
+  local_config = arena_push_struct(arena, yueah_config_t, false);
+  local_config->network = arena_push_struct(arena, network_config_t, false);
+  local_config->compression =
+      arena_push_struct(arena, compression_config_t, false);
+  local_config->ssl = arena_push_struct(arena, ssl_config_t, false);
 
   snprintf(path, 1024, "%s%sconfig.json", cwd, default_path);
   if (!path_exist(path)) {

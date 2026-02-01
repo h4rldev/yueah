@@ -20,6 +20,6 @@ typedef enum {
 #define COLOR_CYAN "\x1b[46m"
 #endif
 
-void migrator_log(log_level_t level, bool time, const char *fmt, ...);
+int migrator_log(log_level_t level, bool time, const char *fmt, ...);
 
 #endif // !YUEAH_MIGRATOR_LOG_H

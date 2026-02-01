@@ -21,10 +21,10 @@ static char *get_time(void) {
   return time_str;
 }
 
-void migrator_log(log_level_t level, bool time, const char *fmt, ...) {
+int migrator_log(log_level_t level, bool time, const char *fmt, ...) {
 #ifndef YUEAH_DEBUG
   if (level == Debug)
-    return;
+    return 0;
 #endif
 
   va_list args;
@@ -63,5 +63,5 @@ void migrator_log(log_level_t level, bool time, const char *fmt, ...) {
   vsnprintf(log_str, 1024, fmt_buf, args);
   va_end(args);
 
-  fprintf(log_file, "%s\n", log_str);
+  return fprintf(log_file, "%s\n", log_str);
 }

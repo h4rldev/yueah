@@ -20,8 +20,11 @@
 #include <config.h>
 #include <db.h>
 #include <file.h>
+#include <log.h>
 #include <mem.h>
 #include <meta.h>
+
+#define YUEAH_NO_LOG_COLORS
 
 static h2o_globalconf_t config;
 static h2o_context_t ctx;
@@ -102,22 +105,22 @@ static int setup_ssl(const char *cert_file, const char *key_file,
 
   /* load certificate and private key */
   if (SSL_CTX_use_certificate_chain_file(accept_ctx.ssl_ctx, cert_file) != 1) {
-    fprintf(
-        stderr,
+    yueah_log(
+        Error, true,
         "an error occurred while trying to load server certificate file:%s\n",
         cert_file);
     return -1;
   }
   if (SSL_CTX_use_PrivateKey_file(accept_ctx.ssl_ctx, key_file,
                                   SSL_FILETYPE_PEM) != 1) {
-    fprintf(stderr,
-            "an error occurred while trying to load private key file:%s\n",
-            key_file);
+    yueah_log(Error, true,
+              "an error occurred while trying to load private key file:%s\n",
+              key_file);
     return -1;
   }
 
   if (SSL_CTX_set_cipher_list(accept_ctx.ssl_ctx, ciphers) != 1) {
-    fprintf(stderr, "ciphers could not be set: %s\n", ciphers);
+    yueah_log(Error, true, "ciphers could not be set: %s\n", ciphers);
     return -1;
   }
 
@@ -177,7 +180,8 @@ int main(int argc, char **argv) {
   yueah_config_t *yueah_config;
   time_t time_container = time(NULL);
   struct tm *time = localtime(&time_container);
-  char log_fname[28] = {0};
+  char log_fname[1024] = {0};
+  char *yueah_log_fname;
 
   uv_loop_t loop;
   h2o_access_log_filehandle_t *log2file = NULL;
@@ -185,40 +189,49 @@ int main(int argc, char **argv) {
   h2o_hostconf_t *hostconf = NULL;
   h2o_pathconf_t *pathconf = NULL;
 
-  snprintf(log_fname, 28, "./logs/yueah-%d-%02d-%02d.log", time->tm_year + 1900,
-           time->tm_mon + 1, time->tm_mday);
-
   if (read_config(arena, &yueah_config) != 0) {
     init_config(arena, &yueah_config);
     write_config(yueah_config);
   }
 
+  yueah_log_fname = arena_push_struct(arena, char, 1024);
+  snprintf(log_fname, 1024, "./logs/yueah-access-%d-%02d-%02d.log",
+           time->tm_year + 1900, time->tm_mon + 1, time->tm_mday);
+  snprintf(yueah_log_fname, 1024, "./logs/yueah-%d-%02d-%02d.log",
+           time->tm_year + 1900, time->tm_mon + 1, time->tm_mday);
+
   switch (yueah_config->log_type) {
   case Both:
     if (path_exist("./logs/") == false)
       make_dir("./logs/");
+
     log2file =
         h2o_access_log_open_handle(log_fname, NULL, H2O_LOGCONF_ESCAPE_APACHE);
     logfh = h2o_access_log_open_handle("/dev/stdout", NULL,
                                        H2O_LOGCONF_ESCAPE_APACHE);
+    register_logger(yueah_log_fname);
+    register_logger(stdout);
     break;
   case File:
     if (path_exist("./logs/") == false)
       make_dir("./logs/");
     log2file =
         h2o_access_log_open_handle(log_fname, NULL, H2O_LOGCONF_ESCAPE_APACHE);
+    register_logger(yueah_log_fname);
     break;
 
   case Console:
     logfh = h2o_access_log_open_handle("/dev/stdout", NULL,
                                        H2O_LOGCONF_ESCAPE_APACHE);
+    register_logger(stdout);
     break;
   }
 
   signal(SIGPIPE, SIG_IGN);
 
   if (parse_args(argc, argv, &yueah_config) != 0) {
-    fprintf(stderr, "yueah: failed parsing args, something is very wrong..\n");
+    yueah_log(Error, true,
+              "yueah: failed parsing args, something is very wrong..\n");
     return -1;
   }
 
@@ -272,19 +285,20 @@ NotCompress:
 
   if (create_listener(yueah_config->network->ip, yueah_config->network->port) !=
       0) {
-    fprintf(stderr, "failed to listen to %s:%u:%s\n", yueah_config->network->ip,
-            yueah_config->network->port, strerror(errno));
+    yueah_log(Error, true, "failed to listen to %s:%u:%s",
+              yueah_config->network->ip, yueah_config->network->port,
+              strerror(errno));
     goto Error;
   }
 
-  if (init_db(yueah_config, &db) != 0) {
-    fprintf(stderr, "failed to init db\n");
+  if (db_connect(yueah_config->db_path, &db, READ | WRITE) != 0) {
+    yueah_log(Error, true, "failed to init db");
   }
 
-  close_db(db);
+  db_disconnect(db);
 
-  printf("yueah: running on %s:%u\n", yueah_config->network->ip,
-         yueah_config->network->port);
+  yueah_log(Info, true, "yueah: running on %s:%u", yueah_config->network->ip,
+            yueah_config->network->port);
   uv_run(ctx.loop, UV_RUN_DEFAULT);
 
   arena_destroy(arena);

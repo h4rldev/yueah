@@ -5,7 +5,12 @@
 
 #include <config.h>
 
-int init_db(yueah_config_t *config, sqlite3 **db);
-void close_db(sqlite3 *db);
+typedef enum {
+  READ = 1 << 0,
+  WRITE = 1 << 1,
+} db_flags_t;
+
+int db_connect(const char *db_path, sqlite3 **db, int flags);
+int db_disconnect(sqlite3 *db);
 
 #endif // !YUEAH_DB_H

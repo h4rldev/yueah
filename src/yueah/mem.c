@@ -1,3 +1,4 @@
+#include <h2o.h>
 #include <mem.h>
 
 #if defined(__linux__)
@@ -7,7 +8,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/param.h>
@@ -18,7 +18,7 @@ uint32_t mem_get_page_size(void) { return (uint32_t)sysconf(_SC_PAGESIZE); }
 static void *mem_reserve(uint64_t size) {
   void *ret = mmap(NULL, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   if (ret == MAP_FAILED) {
-    fprintf(stderr, "Failed to mmap memory\n");
+    h2o_error_printf("[MEM] Failed to mmap memory");
     return NULL;
   }
 
@@ -33,7 +33,7 @@ static bool mem_commit(void *ptr, uint64_t size) {
 static bool mem_decommit(void *ptr, uint64_t size) {
   int32_t ret = mprotect(ptr, size, PROT_NONE);
   if (ret != 0) {
-    fprintf(stderr, "Failed to mprotect memory\n");
+    h2o_error_printf("[MEM] Failed to mprotect memory");
     return false;
   }
   ret = madvise(ptr, size, MADV_DONTNEED);
@@ -57,7 +57,7 @@ mem_arena *arena_init(mem_t reserve_size, mem_t commit_size) {
   mem_arena *arena = mem_reserve(reserve_size);
 
   if (!mem_commit(arena, commit_size)) {
-    fprintf(stderr, "Failed to commit memory\n");
+    h2o_error_printf("[MEM] Failed to commit memory");
     return NULL;
   }
 
@@ -71,12 +71,13 @@ mem_arena *arena_init(mem_t reserve_size, mem_t commit_size) {
 
 void arena_destroy(mem_arena *arena) { mem_release(arena, arena->reserved); }
 
-void *__arena_push_impl(mem_arena *arena, uint64_t size, bool non_zero) {
+void *arena_push(mem_arena *arena, uint64_t size, bool non_zero) {
   uint64_t pos_aligned = ALIGN_UP_TO_POW2(arena->position, ARENA_ALIGN);
   uint64_t new_pos = pos_aligned + size;
 
   if (new_pos > arena->reserved) {
-    fprintf(stderr, "Failed to allocate memory, pos is larger than reserved\n");
+    h2o_error_printf(
+        "[MEM] Failed to allocate memory, pos is larger than reserved");
     return NULL;
   }
 
@@ -90,7 +91,7 @@ void *__arena_push_impl(mem_arena *arena, uint64_t size, bool non_zero) {
     uint64_t commit_size = new_commit_pos - arena->commit_position;
 
     if (!mem_commit(mem, commit_size)) {
-      fprintf(stderr, "Failed to commit memory\n");
+      h2o_error_printf("[MEM] Failed to commit memory");
       return NULL;
     }
 
@@ -138,12 +139,11 @@ temp_arena arena_scratch_get(mem_arena **conflicts, uint32_t num_conflicts) {
   for (int32_t i = 0; i < 2; i++) {
     bool found = false;
 
-    for (uint32_t j = 0; j < num_conflicts; j++) {
+    for (uint32_t j = 0; j < num_conflicts; j++)
       if (conflicts[j] == __scratch_arenas[i]) {
         found = true;
         break;
       }
-    }
 
     if (!found) {
       scratch_id = i;
@@ -151,15 +151,13 @@ temp_arena arena_scratch_get(mem_arena **conflicts, uint32_t num_conflicts) {
     }
   }
 
-  if (scratch_id == -1) {
+  if (scratch_id == -1)
     return (temp_arena){0};
-  }
 
   mem_arena **selected = &__scratch_arenas[scratch_id];
 
-  if (*selected == NULL) {
+  if (*selected == NULL)
     *selected = arena_init(MiB(64), MiB(1));
-  }
 
   return temp_arena_begin(*selected);
 }
