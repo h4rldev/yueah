@@ -20,18 +20,10 @@ typedef struct {
 } compression_config_t;
 
 typedef struct {
-  bool enabled;
-  bool mem_cached;
-  char *cert_path;
-  char *key_path;
-} ssl_config_t;
-
-typedef struct {
   char *db_path;
   log_type_t log_type;
   network_config_t *network;
   compression_config_t *compression;
-  ssl_config_t *ssl;
 } yueah_config_t;
 
 int init_config(h2o_mem_pool_t *pool, yueah_config_t **config);

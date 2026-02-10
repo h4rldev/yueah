@@ -36,12 +36,6 @@ int init_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
   local_config->compression->quality = 6;
   local_config->compression->min_size = 1000;
 
-  local_config->ssl = h2o_mem_alloc_pool(pool, ssl_config_t, 1);
-  local_config->ssl->enabled = false;
-  local_config->ssl->mem_cached = false;
-  local_config->ssl->cert_path = h2o_mem_alloc_pool(pool, char, 1024);
-  local_config->ssl->key_path = h2o_mem_alloc_pool(pool, char, 1024);
-
   *config = local_config;
 
   return 0;
@@ -59,9 +53,6 @@ int write_config(yueah_config_t *config) {
 
   yyjson_mut_val *compression_key;
   yyjson_mut_val *compression_object;
-
-  yyjson_mut_val *ssl_key;
-  yyjson_mut_val *ssl_object;
 
   char *cwd;
   static char path[1024] = {0};
@@ -98,9 +89,6 @@ int write_config(yueah_config_t *config) {
 
   compression_key = yyjson_mut_str(doc, "compression");
   compression_object = yyjson_mut_obj(doc);
-
-  ssl_key = yyjson_mut_str(doc, "ssl");
-  ssl_object = yyjson_mut_obj(doc);
 
   if (config->db_path == NULL)
     yyjson_mut_obj_add_str(doc, root, "db_path", "./yueah.db");
@@ -150,32 +138,6 @@ int write_config(yueah_config_t *config) {
 
   yyjson_mut_obj_add(root, compression_key, compression_object);
 
-  yyjson_mut_obj_add_bool(doc, ssl_object, "enabled", config->ssl->enabled);
-  yyjson_mut_obj_add_bool(doc, ssl_object, "mem_cached",
-                          config->ssl->mem_cached);
-
-  if (!config->ssl->cert_path) {
-    yyjson_mut_obj_add_str(doc, ssl_object, "cert_path", "");
-  } else {
-    yyjson_mut_obj_add_str(doc, ssl_object, "cert_path",
-                           config->ssl->cert_path);
-  }
-
-  if (!config->ssl->key_path) {
-    yyjson_mut_obj_add_str(doc, ssl_object, "key_path", "");
-  } else {
-    yyjson_mut_obj_add_str(doc, ssl_object, "key_path", config->ssl->key_path);
-  }
-
-  yyjson_mut_val *ssl_enabled_key = yyjson_mut_str(doc, "enabled");
-  yyjson_mut_val *ssl_enabled_val = yyjson_mut_bool(doc, false);
-
-  if ((!config->ssl->key_path || !config->ssl->cert_path) &&
-      config->ssl->enabled)
-    yyjson_mut_obj_replace(ssl_object, ssl_enabled_key, ssl_enabled_val);
-
-  yyjson_mut_obj_add(root, ssl_key, ssl_object);
-
   yyjson_mut_doc_set_root(doc, root);
 
   write_res = yyjson_mut_write_file(path, doc, YYJSON_WRITE_PRETTY_TWO_SPACES,
@@ -210,12 +172,6 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
   yyjson_val *quality_val;
   yyjson_val *min_size_val;
 
-  yyjson_val *ssl_object;
-  yyjson_val *ssl_enabled_val;
-  yyjson_val *mem_cached_val;
-  yyjson_val *cert_path_val;
-  yyjson_val *key_path_val;
-
   char *db_path;
   log_type_t log_type;
 
@@ -225,11 +181,6 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
   bool compression_enabled;
   uint8_t quality;
   uint64_t min_size;
-
-  bool ssl_enabled;
-  bool mem_cached;
-  char *cert_path;
-  char *key_path;
 
   yueah_config_t *local_config;
 
@@ -247,7 +198,6 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
   local_config = h2o_mem_alloc_pool(pool, yueah_config_t, 1);
   local_config->network = h2o_mem_alloc_pool(pool, network_config_t, 1);
   local_config->compression = h2o_mem_alloc_pool(pool, compression_config_t, 1);
-  local_config->ssl = h2o_mem_alloc_pool(pool, ssl_config_t, 1);
 
   snprintf(path, 1024, "%s%sconfig.json", cwd, default_path);
   if (!path_exist(path)) {
@@ -274,12 +224,6 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
   compression_enabled_val = yyjson_obj_get(compression_object, "enabled");
   quality_val = yyjson_obj_get(compression_object, "quality");
   min_size_val = yyjson_obj_get(compression_object, "min_size");
-
-  ssl_object = yyjson_obj_get(root, "ssl");
-  ssl_enabled_val = yyjson_obj_get(ssl_object, "enabled");
-  mem_cached_val = yyjson_obj_get(ssl_object, "mem_cached");
-  cert_path_val = yyjson_obj_get(ssl_object, "cert_path");
-  key_path_val = yyjson_obj_get(ssl_object, "key_path");
 
   if (!root) {
     yyjson_doc_free(doc);
@@ -332,31 +276,6 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
     return handle_parse_err("compression", "min_size");
   }
 
-  if (!ssl_object || !yyjson_is_obj(ssl_object)) {
-    yyjson_doc_free(doc);
-    return handle_parse_err("root", "ssl");
-  }
-
-  if (!ssl_enabled_val || !yyjson_is_bool(ssl_enabled_val)) {
-    yyjson_doc_free(doc);
-    return handle_parse_err("ssl", "enabled");
-  }
-
-  if (!mem_cached_val || !yyjson_is_bool(mem_cached_val)) {
-    yyjson_doc_free(doc);
-    return handle_parse_err("ssl", "mem_cached");
-  }
-
-  if (!cert_path_val || !yyjson_is_str(cert_path_val)) {
-    yyjson_doc_free(doc);
-    return handle_parse_err("ssl", "cert_path");
-  }
-
-  if (!key_path_val || !yyjson_is_str(key_path_val)) {
-    yyjson_doc_free(doc);
-    return handle_parse_err("ssl", "key_path");
-  }
-
   db_path = yueah_strdup(pool, yyjson_get_str(db_path_val), 1024);
   if (strncasecmp("both", yyjson_get_str(log_type_val), 4) == 0)
     log_type = Both;
@@ -372,11 +291,6 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
   quality = yyjson_get_uint(quality_val);
   min_size = yyjson_get_uint(min_size_val);
 
-  ssl_enabled = yyjson_get_bool(ssl_enabled_val);
-  mem_cached = yyjson_get_bool(mem_cached_val);
-  cert_path = yueah_strdup(pool, yyjson_get_str(cert_path_val), 1024);
-  key_path = yueah_strdup(pool, yyjson_get_str(key_path_val), 1024);
-
   local_config->db_path = db_path;
   local_config->log_type = log_type;
   local_config->network->ip = ip;
@@ -385,11 +299,6 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
   local_config->compression->enabled = compression_enabled;
   local_config->compression->quality = quality;
   local_config->compression->min_size = min_size;
-
-  local_config->ssl->enabled = ssl_enabled;
-  local_config->ssl->mem_cached = mem_cached;
-  local_config->ssl->cert_path = cert_path;
-  local_config->ssl->key_path = key_path;
 
   *config = local_config;
 

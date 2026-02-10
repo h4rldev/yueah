@@ -30,7 +30,6 @@
 
 static h2o_globalconf_t config;
 static h2o_context_t ctx;
-static h2o_multithread_receiver_t libmemcached_receiver;
 static h2o_accept_ctx_t accept_ctx;
 static yueah_state_t *state;
 
@@ -84,58 +83,6 @@ static int create_listener(const char *ip, const uint16_t port) {
 Error:
   uv_close((uv_handle_t *)&listener, NULL);
   return r;
-}
-
-static int setup_ssl(const char *cert_file, const char *key_file,
-                     const char *ciphers, const char *ip,
-                     const bool use_memcached) {
-  SSL_load_error_strings();
-  SSL_library_init();
-  OpenSSL_add_all_algorithms();
-
-  accept_ctx.ssl_ctx = SSL_CTX_new(SSLv23_server_method());
-  SSL_CTX_set_options(accept_ctx.ssl_ctx, SSL_OP_NO_SSLv2);
-
-  if (use_memcached == true) {
-    accept_ctx.libmemcached_receiver = &libmemcached_receiver;
-    h2o_accept_setup_memcached_ssl_resumption(
-        h2o_memcached_create_context(ip, 11211, 0, 1, "h2o:ssl-resumption:"),
-        86400);
-    h2o_socket_ssl_async_resumption_setup_ctx(accept_ctx.ssl_ctx);
-  }
-
-  SSL_CTX_set_ecdh_auto(accept_ctx.ssl_ctx, 1);
-
-  /* load certificate and private key */
-  if (SSL_CTX_use_certificate_chain_file(accept_ctx.ssl_ctx, cert_file) != 1) {
-    yueah_log(
-        Error, true,
-        "an error occurred while trying to load server certificate file:%s\n",
-        cert_file);
-    return -1;
-  }
-  if (SSL_CTX_use_PrivateKey_file(accept_ctx.ssl_ctx, key_file,
-                                  SSL_FILETYPE_PEM) != 1) {
-    yueah_log(Error, true,
-              "an error occurred while trying to load private key file:%s\n",
-              key_file);
-    return -1;
-  }
-
-  if (SSL_CTX_set_cipher_list(accept_ctx.ssl_ctx, ciphers) != 1) {
-    yueah_log(Error, true, "ciphers could not be set: %s\n", ciphers);
-    return -1;
-  }
-
-/* setup protocol negotiation methods */
-#if H2O_USE_NPN
-  h2o_ssl_register_npn_protocols(accept_ctx.ssl_ctx, h2o_http2_npn_protocols);
-#endif
-#if H2O_USE_ALPN
-  h2o_ssl_register_alpn_protocols(accept_ctx.ssl_ctx, h2o_http2_alpn_protocols);
-#endif
-
-  return 0;
 }
 
 static int get_year(void) {
@@ -283,17 +230,6 @@ int main(int argc, char **argv) {
 NotCompress:
   uv_loop_init(&loop);
   h2o_context_init(&ctx, &loop, &config);
-
-  if (yueah_config->ssl->mem_cached)
-    h2o_multithread_register_receiver(ctx.queue, &libmemcached_receiver,
-                                      h2o_memcached_receiver);
-
-  if (yueah_config->ssl->enabled &&
-      setup_ssl(yueah_config->ssl->cert_path, yueah_config->ssl->key_path,
-                "DEFAULT:!MD5:!DSS:!DES:!RC4:!RC2:!SEED:!IDEA:!"
-                "NULL:!ADH:!EXP:!SRP:!PSK",
-                yueah_config->network->ip, yueah_config->ssl->mem_cached) != 0)
-    goto Error;
 
   accept_ctx.ctx = &ctx;
   accept_ctx.hosts = config.hosts;

@@ -28,9 +28,7 @@ static void usage(void) {
          "    -p, --port       [port number] override port \n"
          "    -s, --ssl                      toggles HTTPS/SSL (needs a cert "
          "and key in path)\n"
-         "    -c, --compress                 toggles gzip compression\n"
-         "    -v, --verbose                  toggles verbose messaging "
-         "(enables logs)\n\n"
+         "    -c, --compress                 toggles gzip compression\n\n"
 
          "%s, %s\n"
          "This program is licensed under %s\n",
@@ -48,14 +46,11 @@ int parse_args(int argc, char **argv, yueah_config_t **populated_args) {
       {"ip-address", required_argument, 0, 'i'},
       {"port", required_argument, 0, 'p'},
       // requires no arg due to being bool;
-      {"ssl", no_argument, 0, 's'},
       {"compress", no_argument, 0, 'c'},
-      {"verbose", no_argument, 0, 'v'},
       {0, 0, 0, 0}}; // end options_arr
 
   while (1) {
-    char arg =
-        getopt_long(argc, argv, ":hi:p:scv", long_options, &option_index);
+    char arg = getopt_long(argc, argv, ":hi:p:c", long_options, &option_index);
 
     if (arg == -1)
       break;
@@ -83,10 +78,6 @@ int parse_args(int argc, char **argv, yueah_config_t **populated_args) {
       } else {
         (*populated_args)->network->port = port_buf;
       }
-      break;
-
-    case 's':
-      (*populated_args)->ssl->enabled = !(*populated_args)->ssl->enabled;
       break;
 
     case 'c':
