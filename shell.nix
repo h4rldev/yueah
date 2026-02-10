@@ -28,5 +28,10 @@ with pkgs;
       just
       gf
       sqruff
+      parallel
     ];
+
+    shellHook = ''
+      echo "will cite" | parallel --citation > /dev/null 2>&1
+    '';
   }

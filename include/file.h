@@ -1,9 +1,7 @@
 #ifndef YUEAH_FILE_H
 #define YUEAH_FILE_H
 
-#include <mem.h>
 #include <stdbool.h>
-// #include <stdio.h>
 
 char *get_mime(const char *path);
 char *get_cwd(void);

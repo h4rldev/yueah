@@ -1,13 +1,15 @@
-#include <yyjson.h>
 
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 
+#include <h2o.h>
+#include <yyjson.h>
+
 #include <config.h>
 #include <file.h>
-#include <mem.h>
+#include <shared.h>
 
 #define DEFAULT_PATH "/config/"
 #define DEFAULT_LEVEL 6
@@ -19,28 +21,26 @@ static int handle_parse_err(char *categ, char *field) {
   return -1;
 }
 
-int init_config(mem_arena *arena, yueah_config_t **config) {
-  yueah_config_t *local_config =
-      arena_push_struct(arena, yueah_config_t, false);
+int init_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
+  yueah_config_t *local_config = h2o_mem_alloc_pool(pool, yueah_config_t, 1);
 
-  local_config->db_path = arena_strdup(arena, "./yueah.db", 1024);
+  local_config->db_path = yueah_strdup(pool, "./yueah.db", 1024);
   local_config->log_type =
       Both; // Console, File, Both are the available options
-  local_config->network = arena_push_struct(arena, network_config_t, false);
-  local_config->network->ip = arena_strdup(arena, "127.0.0.1", 16);
+  local_config->network = h2o_mem_alloc_pool(pool, network_config_t, 1);
+  local_config->network->ip = yueah_strdup(pool, "127.0.0.1", 16);
   local_config->network->port = 8080;
 
-  local_config->compression =
-      arena_push_struct(arena, compression_config_t, false);
+  local_config->compression = h2o_mem_alloc_pool(pool, compression_config_t, 1);
   local_config->compression->enabled = true;
   local_config->compression->quality = 6;
   local_config->compression->min_size = 1000;
 
-  local_config->ssl = arena_push_struct(arena, ssl_config_t, false);
+  local_config->ssl = h2o_mem_alloc_pool(pool, ssl_config_t, 1);
   local_config->ssl->enabled = false;
   local_config->ssl->mem_cached = false;
-  local_config->ssl->cert_path = arena_push_array(arena, char, 1024, false);
-  local_config->ssl->key_path = arena_push_array(arena, char, 1024, false);
+  local_config->ssl->cert_path = h2o_mem_alloc_pool(pool, char, 1024);
+  local_config->ssl->key_path = h2o_mem_alloc_pool(pool, char, 1024);
 
   *config = local_config;
 
@@ -190,7 +190,7 @@ int write_config(yueah_config_t *config) {
   return 0;
 }
 
-int read_config(mem_arena *arena, yueah_config_t **config) {
+int read_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
   yyjson_alc alc = {0};
   yyjson_read_err err;
   char json_buf[KiB(10)] = {0};
@@ -244,11 +244,10 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
 
   yyjson_alc_pool_init(&alc, json_buf, KiB(10));
 
-  local_config = arena_push_struct(arena, yueah_config_t, false);
-  local_config->network = arena_push_struct(arena, network_config_t, false);
-  local_config->compression =
-      arena_push_struct(arena, compression_config_t, false);
-  local_config->ssl = arena_push_struct(arena, ssl_config_t, false);
+  local_config = h2o_mem_alloc_pool(pool, yueah_config_t, 1);
+  local_config->network = h2o_mem_alloc_pool(pool, network_config_t, 1);
+  local_config->compression = h2o_mem_alloc_pool(pool, compression_config_t, 1);
+  local_config->ssl = h2o_mem_alloc_pool(pool, ssl_config_t, 1);
 
   snprintf(path, 1024, "%s%sconfig.json", cwd, default_path);
   if (!path_exist(path)) {
@@ -358,7 +357,7 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
     return handle_parse_err("ssl", "key_path");
   }
 
-  db_path = arena_strdup(arena, yyjson_get_str(db_path_val), 1024);
+  db_path = yueah_strdup(pool, yyjson_get_str(db_path_val), 1024);
   if (strncasecmp("both", yyjson_get_str(log_type_val), 4) == 0)
     log_type = Both;
   else if (strncasecmp("file", yyjson_get_str(log_type_val), 4) == 0)
@@ -366,7 +365,7 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
   else
     log_type = Console;
 
-  ip = arena_strdup(arena, yyjson_get_str(ip_val), 16);
+  ip = yueah_strdup(pool, yyjson_get_str(ip_val), 16);
   port = yyjson_get_uint(port_val);
 
   compression_enabled = yyjson_get_bool(compression_enabled_val);
@@ -375,8 +374,8 @@ int read_config(mem_arena *arena, yueah_config_t **config) {
 
   ssl_enabled = yyjson_get_bool(ssl_enabled_val);
   mem_cached = yyjson_get_bool(mem_cached_val);
-  cert_path = arena_strdup(arena, yyjson_get_str(cert_path_val), 1024);
-  key_path = arena_strdup(arena, yyjson_get_str(key_path_val), 1024);
+  cert_path = yueah_strdup(pool, yyjson_get_str(cert_path_val), 1024);
+  key_path = yueah_strdup(pool, yyjson_get_str(key_path_val), 1024);
 
   local_config->db_path = db_path;
   local_config->log_type = log_type;

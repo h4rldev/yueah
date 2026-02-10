@@ -6,7 +6,6 @@
 #include <unistd.h>
 
 #include <file.h>
-#include <mem.h>
 
 char *get_cwd(void) {
   static char cwd[1024] = {0};

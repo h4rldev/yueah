@@ -1,5 +1,5 @@
-#ifndef YUEAH_API_SHARED_H
-#define YUEAH_API_SHARED_H
+#ifndef YUEAH_API_UTILS_H
+#define YUEAH_API_UTILS_H
 
 #include <h2o.h>
 

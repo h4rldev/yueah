@@ -5,9 +5,10 @@
 #include <h2o.h>
 #include <sodium.h>
 
+#include <base64.h>
 #include <cookie.h>
 #include <log.h>
-#include <mem.h>
+#include <shared.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -27,7 +28,7 @@ static char *collect_contents(char **contents) {
   return collection;
 }
 
-int generate_yueah_key(void) {
+static int generate_yueah_key(void) {
   FILE *key_file;
   unsigned char key[crypto_secretbox_KEYBYTES];
   char hex_key[crypto_secretbox_KEYBYTES * 2 + 1];
@@ -40,7 +41,7 @@ int generate_yueah_key(void) {
     return -1;
   }
 
-  key_file = fopen("key.txt", "w");
+  key_file = fopen("cookie_key.txt", "w");
   hex_key[strlen(hex_key)] = '\n';
   fwrite(hex_key, sizeof(hex_key), 1, key_file);
   fwrite("use this key instead ^", strlen("use this key instead ^"), 1,
@@ -149,47 +150,6 @@ unsigned char *yueah_cookie_decrypt(h2o_mem_pool_t *pool, unsigned char *bin,
   result[decrypted_len] = '\0';
 
   return result;
-}
-
-char *yueah_base64_encode(h2o_mem_pool_t *pool, unsigned char *content,
-                          mem_t content_len, mem_t *out_len) {
-
-  size_t base64_len = sodium_base64_encoded_len(
-      content_len, sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
-
-  char *base64 = h2o_mem_alloc_pool(pool, char *, base64_len);
-  char *result = sodium_bin2base64(base64, base64_len, content, content_len,
-                                   sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
-
-  if (result != base64) {
-    yueah_log(Error, false, "sodium_bin2base64 failed");
-    return NULL;
-  }
-
-  *out_len = base64_len;
-  return base64;
-}
-
-unsigned char *yueah_base64_decode(h2o_mem_pool_t *pool, char *base64,
-                                   mem_t base64_len, mem_t *out_len) {
-  mem_t buf_len = 0;
-  mem_t max_len = base64_len + crypto_secretbox_MACBYTES;
-  char last[64];
-
-  int rc = 0;
-  unsigned char *buf = h2o_mem_alloc_pool(pool, char *, buf_len);
-
-  rc = sodium_base642bin(buf, max_len, base64, base64_len, NULL, &buf_len,
-                         (const char **)&last,
-                         sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
-  if (rc != 0) {
-    yueah_log(Error, false, "sodium_base642bin failed: code %d, last: %s", rc,
-              last);
-    return NULL;
-  }
-
-  *out_len = buf_len;
-  return buf;
 }
 
 static char *unix_time_to_date_header(uint64_t unix_time) {

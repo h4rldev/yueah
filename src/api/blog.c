@@ -1,11 +1,13 @@
-#include <api/blog.h>
-#include <api/shared.h>
+
+#include <h2o.h>
+#include <sqlite3.h>
 
 #include <db.h>
-#include <h2o.h>
 #include <log.h>
-#include <sqlite3.h>
-#include <state.h>
+#include <shared.h>
+
+#include <api/blog.h>
+#include <api/utils.h>
 
 int blog_not_found(h2o_handler_t *handler, h2o_req_t *req) {
   yueah_handler_t *yueah_handler = (yueah_handler_t *)handler;
@@ -27,6 +29,8 @@ int blog_not_found(h2o_handler_t *handler, h2o_req_t *req) {
            exists ? "true" : "false");
 
   db_disconnect(db);
+
+  printf("%s\n", html_buffer);
 
   return error_response(req, 404, html_buffer);
 }

@@ -1,11 +1,12 @@
 #include <string.h>
 
-#include <api/shared.h>
-#include <log.h>
-#include <mem.h>
-
 #include <h2o.h>
 #include <yyjson.h>
+
+#include <log.h>
+#include <shared.h>
+
+#include <api/utils.h>
 
 char *get_res_reason(int status) {
   static char reason[1024] = {0};

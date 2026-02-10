@@ -1,8 +1,10 @@
 #ifndef YUEAH_CONFIG_H
 #define YUEAH_CONFIG_H
 
-#include <mem.h>
 #include <stdbool.h>
+#include <stdint.h>
+
+#include <shared.h>
 
 typedef enum { File, Console, Both } log_type_t;
 
@@ -32,9 +34,9 @@ typedef struct {
   ssl_config_t *ssl;
 } yueah_config_t;
 
-int init_config(mem_arena *arena, yueah_config_t **config);
+int init_config(h2o_mem_pool_t *pool, yueah_config_t **config);
 
-int read_config(mem_arena *arena, yueah_config_t **config);
+int read_config(h2o_mem_pool_t *pool, yueah_config_t **config);
 int write_config(yueah_config_t *config);
 
 #endif // !YUEAH_CONFIG_H

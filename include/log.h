@@ -1,8 +1,7 @@
 #ifndef YUEAH_LOG_H
 #define YUEAH_LOG_H
 
-#include <mem.h>
-
+#include <stdbool.h>
 #include <stdio.h>
 
 typedef enum { LOG_TO_FD, LOG_TO_PATH } yueah_log_type_t;

@@ -21,10 +21,10 @@
 #include <config.h>
 #include <db.h>
 #include <file.h>
+#include <jwt.h>
 #include <log.h>
-#include <mem.h>
 #include <meta.h>
-#include <state.h>
+#include <shared.h>
 
 #include <api/blog.h>
 
@@ -32,7 +32,6 @@ static h2o_globalconf_t config;
 static h2o_context_t ctx;
 static h2o_multithread_receiver_t libmemcached_receiver;
 static h2o_accept_ctx_t accept_ctx;
-static mem_arena *arena;
 static yueah_state_t *state;
 
 static h2o_pathconf_t *
@@ -149,7 +148,7 @@ static int not_found(h2o_handler_t *handler, h2o_req_t *req) {
   h2o_generator_t generator = {NULL, NULL};
 
   yueah_config_t *yueah_config;
-  read_config(arena, &yueah_config);
+  read_config(&req->pool, &yueah_config);
   char html_buffer[1024] = {0};
 
   sprintf(html_buffer,
@@ -179,7 +178,8 @@ static int not_found(h2o_handler_t *handler, h2o_req_t *req) {
 }
 
 int main(int argc, char **argv) {
-  arena = arena_init(MiB(32), MiB(16));
+  h2o_mem_pool_t pool;
+  h2o_mem_init_pool(&pool);
 
   if (sodium_init() == -1)
     return -1;
@@ -196,12 +196,12 @@ int main(int argc, char **argv) {
   h2o_hostconf_t *hostconf = NULL;
   h2o_pathconf_t *pathconf = NULL;
 
-  if (read_config(arena, &yueah_config) != 0) {
-    init_config(arena, &yueah_config);
+  if (read_config(&pool, &yueah_config) != 0) {
+    init_config(&pool, &yueah_config);
     write_config(yueah_config);
   }
 
-  yueah_log_fname = arena_push_struct(arena, char, 1024);
+  yueah_log_fname = h2o_mem_alloc_pool(&pool, char, 1024);
   snprintf(log_fname, 1024, "./logs/yueah-access-%02d-%02d-%02d.log",
            time_buf->tm_year + 1900, time_buf->tm_mon + 1, time_buf->tm_mday);
   snprintf(yueah_log_fname, 1024, "./logs/yueah-%02d-%02d-%02d.log",
@@ -245,7 +245,7 @@ int main(int argc, char **argv) {
   h2o_config_init(&config);
   h2o_compress_register_configurator(&config);
 
-  state = arena_push_struct(arena, yueah_state_t, 1);
+  state = h2o_mem_alloc_pool(&pool, yueah_state_t, 1);
   state->db_path = yueah_config->db_path;
 
   hostconf = h2o_config_register_host(
@@ -307,11 +307,12 @@ NotCompress:
     goto Error;
   }
 
+  yueah_jwt_encode(&pool, "test");
+
   yueah_log(Info, true, "yueah: running on %s:%u", yueah_config->network->ip,
             yueah_config->network->port);
   uv_run(ctx.loop, UV_RUN_DEFAULT);
 
-  arena_destroy(arena);
   return 0;
 
 Error:

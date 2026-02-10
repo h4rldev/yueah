@@ -12,11 +12,17 @@ debug_compile_flags := '-ggdb -fsanitize=address -Wall -Wextra -pedantic -Wno-un
 debug_link_flags := '-ggdb -fsanitize=address -static-libasan'
 release_compile_flags := '-O2 -flto'
 release_link_flags := '-O2 -flto'
+color_reset := "\\033[0m"
+color_red := "\\033[31m"
+color_green := "\\033[32m"
+color_yellow := "\\033[33m"
+color_blue := "\\033[34m"
+color_cyan := "\\033[36m"
 
 default:
     just --list
 
-ensure_h2o:
+ensure_h2o threads=num_cpus():
     #!/usr/bin/env bash
     TEMP=$(mktemp -d)
 
@@ -34,26 +40,52 @@ ensure_h2o:
 
     if ! [[ -f {{ lib_dir }}/libh2o.a ]]; then
       mkdir h2o_build_temp
-      pushd h2o_build_temp
+      pushd h2o_build_temp >/dev/null
       cmake $TEMP
-      make libh2o
+      make libh2o -j{{ threads }}
       cp libh2o.a ../{{ lib_dir }}
       cp libh2o.pc ../{{ lib_dir }}
-      popd
+      popd >/dev/null
     fi
 
     rm -rf h2o_build_temp
     rm -rf $TEMP
 
-compile type="debug":
+compile type="debug" threads=num_cpus():
     #!/usr/bin/env bash
+    shopt -s globstar
+
     [[ -d {{ out_dir }} ]] || mkdir -p {{ out_dir }}
     [[ -d {{ h2o_include }} ]] || just ensure_h2o
 
+    WILL_COMPILE=0
     if [[ {{ type }} == "debug" ]]; then
-        find {{ src_dir }} -name "*.c" -exec sh -c 'gcc -c "$1" -I {{ include_dir }} -I {{ h2o_include }} {{ debug_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-debug.o"' sh {} \;
+        for file in {{ src_dir }}/**/*.c; do
+            if [[ "$file" -nt {{ out_dir }}/$(basename "${file%.c}")-debug.o ]]; then
+                WILL_COMPILE=1
+            fi
+        done
     else
-        find {{ src_dir }} -name "*.c" -exec sh -c 'gcc -c "$1" -I {{ include_dir }} -I {{ h2o_include }} {{ release_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-release.o"' sh {} \;
+        for file in {{ src_dir }}/**/.c; do
+            if [[ "$file" -nt {{ out_dir }}/$(basename "${file%.c}")-release.o ]]; then
+                WILL_COMPILE=1
+            fi
+        done
+    fi
+
+    if [[ $WILL_COMPILE -eq 0 ]]; then
+        echo -e "Compile: Nothing to do.."
+        exit 0
+    fi
+
+    echo -e "Using {{ color_red }}{{ threads }}{{ color_reset }} threads"
+    echo -e "Target: {{ color_green }}{{ type }}{{ color_reset }}\n"
+    if [[ {{ type }} == "debug" ]]; then
+        find {{ src_dir }} -name "*.c" -print0 | xargs -0 -P{{ threads }} -n1 \
+            sh -c 'if [ $1 -nt {{ out_dir }}/$(basename "${1%.c}")-debug.o ]; then echo -e "Compiling {{ color_green }}$1{{ color_reset }}..."; gcc -c "$1" -I {{ include_dir }} -I {{ h2o_include }} {{ debug_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-debug.o"; fi' sh
+    else
+        find {{ src_dir }} -name "*.c" -print0 | xargs -0 -P{{ num_cpus() }} -n1 \
+            sh -c 'if [ $1 -nt {{ out_dir }}/$(basename "${1%.c}")-debug.o ]; then echo -e "Compiling {{ color_green }}$1{{ color_reset }}..."; gcc -c "$1" -I {{ include_dir }} -I {{ h2o_include }} {{ release_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-release.o"; fi' sh
     fi
 
 link type="debug":
@@ -61,18 +93,39 @@ link type="debug":
     [[ -d {{ bin_dir }} ]] || mkdir -p {{ bin_dir }}
     [[ -f {{ lib_dir }}/libh2o.a ]] || just ensure_h2o
 
+    WILL_LINK=0
+    if [[ {{ type }} == "debug" ]]; then
+        for file in {{ out_dir }}/*-debug.o; do
+            if [[ "$file" -nt {{ bin_dir }}/yueah-debug ]]; then
+                WILL_LINK=1
+            fi
+        done
+    else
+        for file in {{ out_dir }}/*-release.o; do
+            if [[ "$file" -nt {{ bin_dir }}/yueah ]]; then
+                WILL_LINK=1
+            fi
+        done
+    fi
+
+    if [[ $WILL_LINK -eq 0 ]]; then
+        echo -e "Link: Nothing to do.."
+        exit 0
+    fi
+
+    echo -e "\nLinking..."
     if [[ {{ type }} == "debug" ]]; then
         gcc {{ out_dir }}/*-debug.o -L {{ lib_dir }} {{ link_flags }} {{ debug_link_flags }} -o {{ bin_dir }}/yueah-debug
     else
         gcc {{ out_dir }}/*-release.o -L {{ lib_dir }} {{ link_flags }} {{ release_link_flags }} -o {{ bin_dir }}/yueah
     fi
 
-release:
-    just compile release
+release threads=num_cpus():
+    just compile release {{ threads }}
     just link release
 
-debug:
-    just compile debug
+debug threads=num_cpus():
+    just compile debug {{ threads }}
     just link debug
 
 migrate:

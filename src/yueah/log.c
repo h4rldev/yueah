@@ -1,5 +1,4 @@
 #include <log.h>
-#include <mem.h>
 
 #include <stdarg.h>
 #include <stdbool.h>
