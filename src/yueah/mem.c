@@ -169,3 +169,13 @@ char *arena_strdup(mem_arena *arena, const char *str, mem_t size) {
   strlcpy(dup, str, size);
   return dup;
 }
+
+void arena_array_append(mem_arena *arena, void ***dst, void *src,
+                        mem_t total_len) {
+  mem_t pos = 0;
+  for (; pos < total_len; pos++)
+    if (!*dst[pos])
+      break;
+
+  *dst[pos] = src;
+}

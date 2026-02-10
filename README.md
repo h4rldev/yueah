@@ -2,12 +2,6 @@
 
 A small blogging backend written in C.
 
-Utilizing:
-
-- [SQLite3](https://www.sqlite.org) for database functionality
-- [libh2o](https://h2o.examp1e.net) for HTTP server functionality
-- [yyjson](https://github.com/ibireme/yyjson) for JSON parsing
-
 ## Building
 
 ### Dependencies

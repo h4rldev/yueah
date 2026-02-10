@@ -38,7 +38,7 @@ static char *get_time(void) {
   if (!time)
     return NULL;
 
-  snprintf(time_str, 32, "%d/%02d/%02d-%02d:%02d:%02d", time->tm_mday,
+  snprintf(time_str, 32, "%02d/%02d/%02d-%02d:%02d:%02d", time->tm_mday,
            time->tm_mon + 1, time->tm_year + 1900, time->tm_hour, time->tm_min,
            time->tm_sec);
 

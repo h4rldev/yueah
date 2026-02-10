@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <sodium.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,22 +24,26 @@
 #include <log.h>
 #include <mem.h>
 #include <meta.h>
+#include <state.h>
 
-#define YUEAH_NO_LOG_COLORS
+#include <api/blog.h>
 
 static h2o_globalconf_t config;
 static h2o_context_t ctx;
 static h2o_multithread_receiver_t libmemcached_receiver;
 static h2o_accept_ctx_t accept_ctx;
 static mem_arena *arena;
-static sqlite3 *db;
+sqlite3 *db;
+yueah_state_t *state;
 
 static h2o_pathconf_t *
 register_handler(h2o_hostconf_t *hostconf, const char *path,
                  int (*on_req)(h2o_handler_t *, h2o_req_t *)) {
   h2o_pathconf_t *pathconf = h2o_config_register_path(hostconf, path, 0);
-  h2o_handler_t *handler = h2o_create_handler(pathconf, sizeof(*handler));
-  handler->on_req = on_req;
+  yueah_handler_t *handler =
+      (yueah_handler_t *)h2o_create_handler(pathconf, sizeof(*handler));
+  handler->state = state;
+  handler->super.on_req = on_req;
   return pathconf;
 }
 
@@ -177,9 +182,12 @@ static int not_found(h2o_handler_t *handler, h2o_req_t *req) {
 int main(int argc, char **argv) {
   arena = arena_init(MiB(32), MiB(16));
 
+  if (sodium_init() == -1)
+    return -1;
+
   yueah_config_t *yueah_config;
   time_t time_container = time(NULL);
-  struct tm *time = localtime(&time_container);
+  struct tm *time_buf = localtime(&time_container);
   char log_fname[1024] = {0};
   char *yueah_log_fname;
 
@@ -195,10 +203,10 @@ int main(int argc, char **argv) {
   }
 
   yueah_log_fname = arena_push_struct(arena, char, 1024);
-  snprintf(log_fname, 1024, "./logs/yueah-access-%d-%02d-%02d.log",
-           time->tm_year + 1900, time->tm_mon + 1, time->tm_mday);
-  snprintf(yueah_log_fname, 1024, "./logs/yueah-%d-%02d-%02d.log",
-           time->tm_year + 1900, time->tm_mon + 1, time->tm_mday);
+  snprintf(log_fname, 1024, "./logs/yueah-access-%02d-%02d-%02d.log",
+           time_buf->tm_year + 1900, time_buf->tm_mon + 1, time_buf->tm_mday);
+  snprintf(yueah_log_fname, 1024, "./logs/yueah-%02d-%02d-%02d.log",
+           time_buf->tm_year + 1900, time_buf->tm_mon + 1, time_buf->tm_mday);
 
   switch (yueah_config->log_type) {
   case Both:
@@ -238,10 +246,19 @@ int main(int argc, char **argv) {
   h2o_config_init(&config);
   h2o_compress_register_configurator(&config);
 
+  state = arena_push_struct(arena, yueah_state_t, 1);
+  state->db_path = yueah_config->db_path;
+
   hostconf = h2o_config_register_host(
       &config, h2o_iovec_init(H2O_STRLIT("default")), 65535);
 
   pathconf = register_handler(hostconf, "/", not_found);
+  if (logfh)
+    h2o_access_log_register(pathconf, logfh);
+  if (log2file)
+    h2o_access_log_register(pathconf, log2file);
+
+  pathconf = register_handler(hostconf, "/blog", blog_not_found);
   if (logfh)
     h2o_access_log_register(pathconf, logfh);
   if (log2file)
@@ -281,7 +298,7 @@ NotCompress:
 
   accept_ctx.ctx = &ctx;
   accept_ctx.hosts = config.hosts;
-  config.server_name = h2o_iovec_init(H2O_STRLIT("toast"));
+  config.server_name = h2o_iovec_init(H2O_STRLIT("yueah"));
 
   if (create_listener(yueah_config->network->ip, yueah_config->network->port) !=
       0) {
@@ -291,16 +308,11 @@ NotCompress:
     goto Error;
   }
 
-  if (db_connect(yueah_config->db_path, &db, READ | WRITE) != 0) {
-    yueah_log(Error, true, "failed to init db");
-  }
-
-  db_disconnect(db);
-
   yueah_log(Info, true, "yueah: running on %s:%u", yueah_config->network->ip,
             yueah_config->network->port);
   uv_run(ctx.loop, UV_RUN_DEFAULT);
 
+  db_disconnect(db);
   arena_destroy(arena);
   return 0;
 

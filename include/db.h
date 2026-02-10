@@ -1,6 +1,7 @@
 #ifndef YUEAH_DB_H
 #define YUEAH_DB_H
 
+#include <h2o.h>
 #include <sqlite3.h>
 
 #include <config.h>

@@ -16,6 +16,7 @@ with pkgs;
       wslay
       libcap
       sqlite
+      libsodium
     ];
 
     packages = [

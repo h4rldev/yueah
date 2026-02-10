@@ -9,6 +9,6 @@
     abort();                                                                   \
   } while (0)
 
-int not_found(h2o_handler_t *handler, h2o_req_t *req);
+int blog_not_found(h2o_handler_t *handler, h2o_req_t *req);
 
 #endif // !YUEAH_API_BLOG_H
