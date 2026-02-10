@@ -214,10 +214,7 @@ int error_response(h2o_req_t *req, int status, const char *message) {
 
   yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
   yyjson_mut_val *root = yyjson_mut_obj(doc);
-
   char *body = error_resp_to_json(&req->pool, doc, root, error_response);
-  yueah_log(Info, true, "body: %s", body);
-
   h2o_iovec_t body_iovec = h2o_strdup(&req->pool, body, strlen(body));
 
   req->res.status = status;

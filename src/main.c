@@ -33,8 +33,7 @@ static h2o_context_t ctx;
 static h2o_multithread_receiver_t libmemcached_receiver;
 static h2o_accept_ctx_t accept_ctx;
 static mem_arena *arena;
-sqlite3 *db;
-yueah_state_t *state;
+static yueah_state_t *state;
 
 static h2o_pathconf_t *
 register_handler(h2o_hostconf_t *hostconf, const char *path,
@@ -312,7 +311,6 @@ NotCompress:
             yueah_config->network->port);
   uv_run(ctx.loop, UV_RUN_DEFAULT);
 
-  db_disconnect(db);
   arena_destroy(arena);
   return 0;
 
