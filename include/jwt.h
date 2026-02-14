@@ -16,10 +16,10 @@ typedef struct {
   const char *iss;
   const char *sub;
   const char *aud;
-  const mem_t iat;
-  const mem_t exp;
+  mem_t iat;
+  mem_t exp;
   const char *jti;
-  const mem_t nbf;
+  mem_t nbf;
 } yueah_jwt_claims_t;
 
 char *yueah_jwt_encode(h2o_mem_pool_t *pool, const char *payload);

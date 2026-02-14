@@ -249,6 +249,7 @@ NotCompress:
             yueah_config->network->port);
   uv_run(ctx.loop, UV_RUN_DEFAULT);
 
+  h2o_mem_clear_pool(&pool);
   return 0;
 
 Error:

@@ -17,6 +17,11 @@ typedef enum { INVALID = -1, LAX, STRICT, NONE } yueah_same_site_t;
 
 typedef int yueah_cookie_mask;
 
+typedef struct {
+  char *name;
+  char *content; // Encrypted by default
+} yueah_cookie_t;
+
 /*
  * Construct a Set-Cookie header with given arguments
  *
