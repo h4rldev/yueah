@@ -2,11 +2,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <cli.h>
-#include <config.h>
-#include <meta.h>
 #include <time.h>
+
+#include <yueah/cli.h>
+#include <yueah/config.h>
+#include <yueah/log.h>
+#include <yueah/meta.h>
 
 static void get_current_year(char (*buf)[5]) {
   struct tm local_time;
@@ -63,7 +64,7 @@ int parse_args(int argc, char **argv, yueah_config_t **populated_args) {
     case 'i':
       ip_buf = optarg;
       if (strlen(ip_buf) > 15) {
-        fprintf(stderr, "Unknown ip address \"%s\"\n", ip_buf);
+        yueah_log_error("Unknown ip address \"%s\"\n", ip_buf);
         return -1;
       } else {
         (*populated_args)->network->ip = ip_buf;

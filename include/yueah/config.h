@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include <shared.h>
+#include <yueah/shared.h>
 
 typedef enum { File, Console, Both } log_type_t;
 

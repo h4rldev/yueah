@@ -1,4 +1,3 @@
-
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -7,9 +6,9 @@
 #include <h2o.h>
 #include <yyjson.h>
 
-#include <config.h>
-#include <file.h>
-#include <shared.h>
+#include <yueah/config.h>
+#include <yueah/file.h>
+#include <yueah/shared.h>
 
 #define DEFAULT_PATH "/config/"
 #define DEFAULT_LEVEL 6

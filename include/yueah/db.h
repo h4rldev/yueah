@@ -4,7 +4,7 @@
 #include <h2o.h>
 #include <sqlite3.h>
 
-#include <config.h>
+#include <yueah/config.h>
 
 typedef enum {
   READ = 1 << 0,

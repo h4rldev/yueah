@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include <config.h>
+#include <yueah/config.h>
 
 int parse_args(int argc, char **argv, yueah_config_t **populated_args);
 

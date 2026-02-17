@@ -20,12 +20,11 @@ typedef enum {
 
 #ifndef YUEAH_NO_LOG_COLORS
 #define COLOR_RESET "\x1b[0m"
-#define FG_TRANS "\x1b[30m"
-#define COLOR_RED "\x1b[41m"
-#define COLOR_GREEN "\x1b[42m"
-#define COLOR_YELLOW "\x1b[43m"
-#define COLOR_BLUE "\x1b[44m"
-#define COLOR_CYAN "\x1b[46m"
+#define COLOR_RED "\x1b[31m"
+#define COLOR_GREEN "\x1b[32m"
+#define COLOR_YELLOW "\x1b[33m"
+#define COLOR_BLUE "\x1b[34m"
+#define COLOR_CYAN "\x1b[36m"
 #else
 #define COLOR_RESET ""
 #define FG_TRANS ""
@@ -45,5 +44,15 @@ void yueah_log(log_level_t level, bool time, const char *fmt, ...);
   _Generic((target),                                                           \
       FILE *: __register_logger_fd,                                            \
       char *: __register_logger_path)(target)
+
+#define yueah_log_error(fmt, ...) yueah_log(Error, true, fmt, ##__VA_ARGS__)
+#define yueah_log_warning(fmt, ...) yueah_log(Warning, true, fmt, ##__VA_ARGS__)
+#define yueah_log_info(fmt, ...) yueah_log(Info, true, fmt, ##__VA_ARGS__)
+#define yueah_log_debug(fmt, ...) yueah_log(Debug, true, fmt, ##__VA_ARGS__)
+#define yueah_log_error_tl(fmt, ...) yueah_log(Error, false, fmt, ##__VA_ARGS__)
+#define yueah_log_warning_tl(fmt, ...)                                         \
+  yueah_log(Warning, false, fmt, ##__VA_ARGS__)
+#define yueah_log_info_tl(fmt, ...) yueah_log(Info, false, fmt, ##__VA_ARGS__)
+#define yueah_log_debug_tl(fmt, ...) yueah_log(Debug, false, fmt, ##__VA_ARGS__)
 
 #endif // !YUEAH_LOG_H

@@ -1,17 +1,17 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #include <h2o.h>
 #include <sodium.h>
 
-#include <base64.h>
-#include <cookie.h>
-#include <log.h>
-#include <shared.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
+#include <yueah/base64.h>
+#include <yueah/cookie.h>
+#include <yueah/log.h>
+#include <yueah/shared.h>
 
 #define YUEAH_COOKIE_CIPHER_LEN (4096 + crypto_secretbox_MACBYTES)
 
@@ -257,7 +257,7 @@ char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
   char *cookie_header = h2o_mem_alloc_pool(pool, char *, header_size);
 
   yueah_same_site_t same_site = -1;
-  mem_t max_age = -1;
+  mem_t max_age = 0;
   char *expires = NULL;
   char *domain = NULL;
   char *path = NULL;
@@ -341,7 +341,7 @@ char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
     strlcat(cookie_header, ";", header_size);
   }
 
-  if (max_age) {
+  if (max_age > 0) {
     char fmt_buf[64];
     snprintf(fmt_buf, 64, "%lu", max_age);
     strlcat(cookie_header, " Max-Age=", header_size);
@@ -363,4 +363,37 @@ char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
 
   va_end(va);
   return cookie_header;
+}
+
+static char *parse_cookie(h2o_mem_pool_t *pool, const char *cookie_header,
+                          const char *cookie_name) {
+  char format[4096] = {0};
+  snprintf(format, 4096, "%s=", cookie_name);
+  yueah_log_debug("header: %s", cookie_header);
+
+  char *res = strstr(cookie_header, format);
+  if (!res) {
+    yueah_log_error("Invalid cookie header");
+    return NULL;
+  }
+
+  char *end = strchr(res, ';');
+  if (end)
+    *end = '\0';
+
+  char *cookie_content = h2o_mem_alloc_pool(pool, char *, strlen(res) + 1);
+  memcpy(cookie_content, res + strlen(format),
+         strlen(res) - strlen(format) + 1);
+
+  return cookie_content;
+}
+
+char *yueah_get_cookie_content(h2o_mem_pool_t *pool, char *cookie_header,
+                               char *cookie_name, mem_t type) {
+  // char *cookie_content = NULL;
+
+  char *content = parse_cookie(pool, cookie_header, cookie_name);
+  yueah_log_debug("content: %s", content);
+
+  return NULL;
 }

@@ -17,14 +17,15 @@
 #include <h2o/memcached.h>
 #include <sqlite3.h>
 
-#include <cli.h>
-#include <config.h>
-#include <db.h>
-#include <file.h>
-#include <jwt.h>
-#include <log.h>
-#include <meta.h>
-#include <shared.h>
+#include <yueah/cli.h>
+#include <yueah/config.h>
+#include <yueah/cookie.h>
+#include <yueah/db.h>
+#include <yueah/file.h>
+#include <yueah/jwt.h>
+#include <yueah/log.h>
+#include <yueah/meta.h>
+#include <yueah/shared.h>
 
 #include <api/blog.h>
 
@@ -243,7 +244,18 @@ NotCompress:
     goto Error;
   }
 
-  yueah_jwt_encode(&pool, "test");
+  /*char **content = h2o_mem_alloc_pool(&pool, char *, 3);
+  content[0] = "yueah";
+  content[1] = "yueah";
+  content[2] = NULL;
+
+  char *cookie = yueah_set_cookie_new(&pool, "test", content, 0);
+  yueah_get_cookie(&pool, cookie, "test", 0);
+*/
+
+  mem_t jwt_len = 0;
+  char *jwt = yueah_jwt_encode(&pool, "test", Access, &jwt_len);
+  yueah_jwt_verify(&pool, jwt, jwt_len, "test", Access);
 
   yueah_log(Info, true, "yueah: running on %s:%u", yueah_config->network->ip,
             yueah_config->network->port);

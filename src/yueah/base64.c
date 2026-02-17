@@ -2,8 +2,9 @@
 #include <h2o.h>
 #include <sodium.h>
 
-#include <log.h>
-#include <shared.h>
+#include <yueah/base64.h>
+#include <yueah/log.h>
+#include <yueah/shared.h>
 
 char *yueah_base64_encode(h2o_mem_pool_t *pool, unsigned char *content,
                           mem_t content_len, mem_t *out_len) {
@@ -16,7 +17,7 @@ char *yueah_base64_encode(h2o_mem_pool_t *pool, unsigned char *content,
                                    sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
 
   if (result != base64) {
-    yueah_log(Error, false, "sodium_bin2base64 failed");
+    yueah_log_error("sodium_bin2base64 failed");
     return NULL;
   }
 
@@ -25,9 +26,10 @@ char *yueah_base64_encode(h2o_mem_pool_t *pool, unsigned char *content,
 }
 
 unsigned char *yueah_base64_decode(h2o_mem_pool_t *pool, char *base64,
-                                   mem_t base64_len, mem_t *out_len) {
+                                   mem_t base64_len, mem_t max_out_len,
+                                   mem_t *out_len) {
   mem_t buf_len = 0;
-  mem_t max_len = base64_len + crypto_secretbox_MACBYTES;
+  mem_t max_len = max_out_len;
   char last[64];
 
   int rc = 0;
@@ -37,10 +39,12 @@ unsigned char *yueah_base64_decode(h2o_mem_pool_t *pool, char *base64,
                          (const char **)&last,
                          sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
   if (rc != 0) {
-    yueah_log(Error, false, "sodium_base642bin failed: code %d, last: %s", rc,
-              last);
+    yueah_log_error("sodium_base642bin failed: code %d, last: %s", rc, last);
     return NULL;
   }
+
+  buf[buf_len] = '\0';
+  yueah_log_debug("buf: %s", buf);
 
   *out_len = buf_len;
   return buf;

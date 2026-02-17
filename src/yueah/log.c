@@ -1,10 +1,10 @@
-#include <log.h>
-
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+
+#include <yueah/log.h>
 
 typedef struct {
   FILE *fd;
@@ -52,7 +52,7 @@ void yueah_log(log_level_t level, bool time, const char *fmt, ...) {
 
   va_list args;
   char *time_str;
-  static char level_str[23] = {0};
+  static char level_str[20] = {0};
   char fmt_buf[1024] = {0};
   char log_str[1024] = {0};
 
@@ -72,31 +72,18 @@ void yueah_log(log_level_t level, bool time, const char *fmt, ...) {
 
   switch (level) {
   case Error:
-    if (log_file1)
-      snprintf(level_str, 23, "[%s%s ERR %s]:", FG_TRANS, COLOR_RED,
-               COLOR_RESET);
-    else
-      strlcpy(level_str, "[ ERR ]:", 23);
+    snprintf(level_str, 20, "%s[ERROR]%s:", COLOR_RED, COLOR_RESET);
     if (log_file1)
       log_file1 = stderr;
     break;
   case Warning:
-    if (log_file1)
-      snprintf(level_str, 23, "[%s%s WRN %s]:", FG_TRANS, COLOR_YELLOW,
-               COLOR_RESET);
-    else
-      strlcpy(level_str, "[ WRN ]:", 23);
+    snprintf(level_str, 20, " %s[WARN]%s:", COLOR_YELLOW, COLOR_RESET);
     break;
   case Info:
-    if (log_file1)
-      snprintf(level_str, 23, "[%s%s INF %s]:", FG_TRANS, COLOR_CYAN,
-               COLOR_RESET);
-    else
-      strlcpy(level_str, "[ INF ]:", 23);
+    snprintf(level_str, 20, " %s[INFO]%s:", COLOR_CYAN, COLOR_RESET);
     break;
   case Debug:
-    snprintf(level_str, 23, "[%s%s DEB %s]:", FG_TRANS, COLOR_BLUE,
-             COLOR_RESET);
+    snprintf(level_str, 20, "%s[DEBUG]%s:", COLOR_BLUE, COLOR_RESET);
     break;
   }
 
@@ -117,19 +104,19 @@ void yueah_log(log_level_t level, bool time, const char *fmt, ...) {
   if (log_file2) {
     switch (level) {
     case Error:
-      strlcpy(level_str, "[ DEB ]:", 23);
+      strlcpy(level_str, "[ERROR]:", 20);
       break;
 
     case Warning:
-      strlcpy(level_str, "[ WRN ]:", 23);
+      strlcpy(level_str, " [WARN]:", 20);
       break;
 
     case Info:
-      strlcpy(level_str, "[ INF ]:", 23);
+      strlcpy(level_str, " [INFO]:", 20);
       break;
 
     case Debug:
-      strlcpy(level_str, "[ DEB ]:", 23);
+      strlcpy(level_str, "[DEBUG]:", 20);
       break;
     }
 

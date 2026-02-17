@@ -3,8 +3,8 @@
 #include <h2o.h>
 #include <sqlite3.h>
 
-#include <db.h>
-#include <log.h>
+#include <yueah/db.h>
+#include <yueah/log.h>
 
 int db_connect(const char *db_path, sqlite3 **db, int flags) {
   int rc = SQLITE_OK;
