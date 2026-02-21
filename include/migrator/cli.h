@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#include <mem.h>
+#include <migrator/mem.h>
 
 typedef struct {
   char *migrations_path, *db_path, *migration_name;

@@ -9,9 +9,9 @@ include_dir := 'include'
 h2o_include := lib_dir + '/include'
 link_flags := '-lyyjson -lh2o -lssl -lcrypto -lz -luv -lm -lbrotlidec -lbrotlienc -lbsd -lsqlite3 -lsodium'
 debug_compile_flags := '-ggdb -fsanitize=address -Wall -Wextra -pedantic -Wno-unused-parameter -Wno-variadic-macros -DYUEAH_DEBUG'
-debug_link_flags := '-ggdb -fsanitize=address -static-libasan'
+debug_link_flags := '-ggdb -fsanitize=address -static-libasan -ldotenv-debug'
 release_compile_flags := '-O2 -flto'
-release_link_flags := '-O2 -flto'
+release_link_flags := '-O2 -flto -ldotenv'
 color_reset := "\\033[0m"
 color_red := "\\033[31m"
 color_green := "\\033[32m"
@@ -51,7 +51,10 @@ ensure_h2o threads=num_cpus():
     rm -rf h2o_build_temp
     rm -rf $TEMP
 
-compile type="debug" threads=num_cpus():
+ensure_dotenv type="debug" threads=num_cpus():
+    just --justfile dotenv/justfile {{ type }}
+
+compile type="debug" force="false" threads=num_cpus():
     #!/usr/bin/env bash
     shopt -s globstar
 
@@ -66,11 +69,16 @@ compile type="debug" threads=num_cpus():
             fi
         done
     else
-        for file in {{ src_dir }}/**/.c; do
+        for file in {{ src_dir }}/**/*.c; do
             if [[ "$file" -nt {{ out_dir }}/$(basename "${file%.c}")-release.o ]]; then
                 WILL_COMPILE=1
             fi
         done
+    fi
+
+    if [[ {{ force }} == "true" ]]; then
+        echo -e "Compile: Forcing.."
+        WILL_COMPILE=1
     fi
 
     if [[ $WILL_COMPILE -eq 0 ]]; then
@@ -82,16 +90,22 @@ compile type="debug" threads=num_cpus():
     echo -e "Target: {{ color_green }}{{ type }}{{ color_reset }}\n"
     if [[ {{ type }} == "debug" ]]; then
         find {{ src_dir }} -name "*.c" -print0 | xargs -0 -P{{ threads }} -n1 \
-            sh -c 'if [ $1 -nt {{ out_dir }}/$(basename "${1%.c}")-debug.o ]; then echo -e "Compiling {{ color_green }}$1{{ color_reset }}..."; gcc -c "$1" -I {{ include_dir }} -I {{ h2o_include }} {{ debug_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-debug.o"; fi' sh
+            sh -c 'if [[ $1 -nt {{ out_dir }}/$(basename "${1%.c}")-debug.o || {{ force }} == "true" ]]; then echo -e "Compiling {{ color_green }}$1{{ color_reset }}..."; gcc -c "$1" -I {{ include_dir }} -I {{ h2o_include }} {{ debug_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-debug.o"; fi' sh
     else
         find {{ src_dir }} -name "*.c" -print0 | xargs -0 -P{{ num_cpus() }} -n1 \
-            sh -c 'if [ $1 -nt {{ out_dir }}/$(basename "${1%.c}")-debug.o ]; then echo -e "Compiling {{ color_green }}$1{{ color_reset }}..."; gcc -c "$1" -I {{ include_dir }} -I {{ h2o_include }} {{ release_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-release.o"; fi' sh
+            sh -c 'if [[ $1 -nt {{ out_dir }}/$(basename "${1%.c}")-release.o || {{ force }} == "true" ]]; then echo -e "Compiling {{ color_green }}$1{{ color_reset }}..."; gcc -c "$1" -I {{ include_dir }} -I {{ h2o_include }} {{ release_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-release.o"; fi' sh
     fi
 
 link type="debug":
     #!/usr/bin/env bash
     [[ -d {{ bin_dir }} ]] || mkdir -p {{ bin_dir }}
     [[ -f {{ lib_dir }}/libh2o.a ]] || just ensure_h2o
+
+    if [[ {{ type }} == "debug" ]]; then
+        [[ -f {{ lib_dir }}/libdotenv-debug.a ]] || just ensure_dotenv debug
+    else
+        [[ -f {{ lib_dir }}/libdotenv.a ]] || just ensure_dotenv release
+    fi
 
     WILL_LINK=0
     if [[ {{ type }} == "debug" ]]; then
@@ -132,5 +146,5 @@ migrate:
     just --justfile migrator/justfile migrate
 
 bear:
-    bear -- just compile
+    bear -- just compile debug true
     sed -i 's|"/nix/store/[^"]*gcc[^"]*|\"gcc|g' compile_commands.json

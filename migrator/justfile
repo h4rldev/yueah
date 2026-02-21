@@ -10,36 +10,94 @@ debug_compile_flags := '-ggdb -fsanitize=address -Wall -Wextra -pedantic -Wno-va
 debug_link_flags := '-ggdb -fsanitize=address -static-libasan'
 release_compile_flags := '-O2 -flto'
 release_link_flags := '-O2 -flto'
+color_reset := "\\033[0m"
+color_red := "\\033[31m"
+color_green := "\\033[32m"
+color_yellow := "\\033[33m"
+color_blue := "\\033[34m"
+color_cyan := "\\033[36m"
 
 default:
     just --list
 
-compile type="debug":
+compile type="debug" force="false" threads=num_cpus():
     #!/usr/bin/env bash
+    shopt -s globstar
+
     [[ -d {{ out_dir }} ]] || mkdir -p {{ out_dir }}
 
+    WILL_COMPILE=0
     if [[ {{ type }} == "debug" ]]; then
-        find {{ src_dir }} -name "*.c" -exec sh -c 'gcc -c "$1" -I {{ include_dir }} {{ debug_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-debug.o"' sh {} \;
+        for file in {{ src_dir }}/**/*.c; do
+            if [[ "$file" -nt {{ out_dir }}/$(basename "${file%.c}")-debug.o ]]; then
+                WILL_COMPILE=1
+            fi
+        done
     else
-        find {{ src_dir }} -name "*.c" -exec sh -c 'gcc -c "$1" -I {{ include_dir }} {{ release_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-release.o"' sh {} \;
+        for file in {{ src_dir }}/**/*.c; do
+            if [[ "$file" -nt {{ out_dir }}/$(basename "${file%.c}")-release.o ]]; then
+                WILL_COMPILE=1
+            fi
+        done
+    fi
+
+    if [[ {{ force }} == "true" ]]; then
+        echo -e "Compile: Forcing.."
+        WILL_COMPILE=1
+    fi
+
+    if [[ $WILL_COMPILE -eq 0 ]]; then
+        echo -e "Compile: Nothing to do.."
+        exit 0
+    fi
+
+    echo -e "Using {{ color_red }}{{ threads }}{{ color_reset }} threads"
+    echo -e "Target: {{ color_green }}{{ type }}{{ color_reset }}\n"
+    if [[ {{ type }} == "debug" ]]; then
+        find {{ src_dir }} -name "*.c" -print0 | xargs -0 -P{{ threads }} -n1 \
+            sh -c 'if [[ $1 -nt {{ out_dir }}/$(basename "${1%.c}")-debug.o || {{ force }} == "true" ]]; then echo -e "Compiling {{ color_green }}$1{{ color_reset }}..."; gcc -c "$1" -I {{ include_dir }} {{ debug_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-debug.o"; fi' sh
+    else
+        find {{ src_dir }} -name "*.c" -print0 | xargs -0 -P{{ num_cpus() }} -n1 \
+            sh -c 'if [[ $1 -nt {{ out_dir }}/$(basename "${1%.c}")-release.o || {{ force }} == "true" ]]; then echo -e "Compiling {{ color_green }}$1{{ color_reset }}..."; gcc -c "$1" -I {{ include_dir }} {{ release_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-release.o"; fi' sh
     fi
 
 link type="debug":
     #!/usr/bin/env bash
     [[ -d {{ bin_dir }} ]] || mkdir -p {{ bin_dir }}
 
+    WILL_LINK=0
+    if [[ {{ type }} == "debug" ]]; then
+        for file in {{ out_dir }}/*-debug.o; do
+            if [[ "$file" -nt {{ bin_dir }}/migrator-debug ]]; then
+                WILL_LINK=1
+            fi
+        done
+    else
+        for file in {{ out_dir }}/*-release.o; do
+            if [[ "$file" -nt {{ bin_dir }}/migrator ]]; then
+                WILL_LINK=1
+            fi
+        done
+    fi
+
+    if [[ $WILL_LINK -eq 0 ]]; then
+        echo -e "Link: Nothing to do.."
+        exit 0
+    fi
+
+    echo -e "\nLinking..."
     if [[ {{ type }} == "debug" ]]; then
         gcc {{ out_dir }}/*-debug.o {{ link_flags }} {{ debug_link_flags }} -o {{ bin_dir }}/migrator-debug
     else
         gcc {{ out_dir }}/*-release.o {{ link_flags }} {{ release_link_flags }} -o {{ bin_dir }}/migrator
     fi
 
-release:
-    just compile release
+release threads=num_cpus():
+    just compile release {{ threads }}
     just link release
 
-debug:
-    just compile debug
+debug threads=num_cpus():
+    just compile debug {{ threads }}
     just link debug
 
 migrate:
@@ -47,5 +105,6 @@ migrate:
     {{ bin_dir }}/migrator ./migrator/migrations ./yueah.db
 
 bear:
-    bear -- just compile
-    sed -i 's|"/nix/store/[^"]*gcc[^"]*|\"gcc|g' compile_commands.json
+    bear -- just compile debug true
+    mv compile_commands.json ../compile_commands.json
+    sed -i 's|"/nix/store/[^"]*gcc[^"]*|\"gcc|g' ../compile_commands.json

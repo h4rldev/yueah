@@ -2,9 +2,9 @@
 #include <h2o.h>
 #include <sqlite3.h>
 
-#include <db.h>
-#include <log.h>
-#include <shared.h>
+#include <yueah/db.h>
+#include <yueah/log.h>
+#include <yueah/shared.h>
 
 #include <api/blog.h>
 #include <api/utils.h>

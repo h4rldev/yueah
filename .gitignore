@@ -92,6 +92,10 @@ dkms.conf
 # direnv
 .direnv/
 
+# env
+.env
+.env.*
+
 # Build files
 out
 bin

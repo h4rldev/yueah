@@ -1,0 +1,100 @@
+set shell := ["bash", "-c"]
+set quiet := true
+
+src_dir := 'src'
+out_dir := 'out'
+lib_dir := '../lib'
+include_dir := '../include'
+h2o_include := lib_dir + '/include'
+debug_compile_flags := '-ggdb -fsanitize=address -Wall -Wextra -pedantic -Wno-unused-parameter -Wno-variadic-macros'
+release_compile_flags := '-O2 -flto'
+color_reset := "\\033[0m"
+color_red := "\\033[31m"
+color_green := "\\033[32m"
+color_yellow := "\\033[33m"
+color_blue := "\\033[34m"
+color_cyan := "\\033[36m"
+
+default:
+    just --list
+
+compile type="debug" threads=num_cpus():
+    #!/usr/bin/env bash
+    shopt -s globstar
+
+    [[ -d {{ out_dir }} ]] || mkdir -p {{ out_dir }}
+
+    WILL_COMPILE=0
+    if [[ {{ type }} == "debug" ]]; then
+        for file in {{ src_dir }}/**/*.c; do
+            if [[ "$file" -nt {{ out_dir }}/$(basename "${file%.c}")-debug.o ]]; then
+                WILL_COMPILE=1
+            fi
+        done
+    else
+        for file in {{ src_dir }}/**/*.c; do
+            if [[ "$file" -nt {{ out_dir }}/$(basename "${file%.c}")-release.o ]]; then
+                WILL_COMPILE=1
+            fi
+        done
+    fi
+
+    if [[ $WILL_COMPILE -eq 0 ]]; then
+        echo -e "Compile: Nothing to do.."
+        exit 0
+    fi
+
+    echo -e "Using {{ color_red }}{{ threads }}{{ color_reset }} threads"
+    echo -e "Target: {{ color_green }}{{ type }}{{ color_reset }}\n"
+    if [[ {{ type }} == "debug" ]]; then
+        find {{ src_dir }} -name "*.c" -print0 | xargs -0 -P{{ threads }} -n1 \
+            sh -c 'if [ $1 -nt {{ out_dir }}/$(basename "${1%.c}")-debug.o ]; then echo -e "Compiling {{ color_green }}$1{{ color_reset }}..."; gcc -c "$1" -I {{ include_dir }} -I {{ h2o_include }} {{ debug_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-debug.o"; fi' sh
+    else
+        find {{ src_dir }} -name "*.c" -print0 | xargs -0 -P{{ num_cpus() }} -n1 \
+            sh -c 'if [ $1 -nt {{ out_dir }}/$(basename "${1%.c}")-debug.o ]; then echo -e "Compiling {{ color_green }}$1{{ color_reset }}..."; gcc -c "$1" -I {{ include_dir }} -I {{ h2o_include }} {{ release_compile_flags }} -o "{{ out_dir }}/$(basename "${1%.c}")-release.o"; fi' sh
+    fi
+
+archive type="debug":
+    #!/usr/bin/env bash
+    [[ -d {{ lib_dir }} ]] || mkdir -p {{ lib_dir }}
+
+    WILL_ARCHIVE=0
+    if [[ {{ type }} == "debug" ]]; then
+        for file in {{ out_dir }}/*-debug.o; do
+            if [[ "$file" -nt {{ lib_dir }}/libdotenv-debug.a ]]; then
+                WILL_ARCHIVE=1
+            fi
+        done
+    else
+        for file in {{ out_dir }}/*-release.o; do
+            if [[ "$file" -nt {{ lib_dir }}/libdotenv.a ]]; then
+                WILL_ARCHIVE=1
+            fi
+        done
+    fi
+
+    if [[ $WILL_ARCHIVE -eq 0 ]]; then
+        echo -e "Archive: Nothing to do.."
+        exit 0
+    fi
+
+    echo -e "\nArchiving..."
+    if [[ {{ type }} == "debug" ]]; then
+        ar rcs {{ lib_dir }}/libdotenv-debug.a {{ out_dir }}/*-debug.o
+        ranlib {{ lib_dir }}/libdotenv-debug.a
+    else
+        ar rcs {{ lib_dir }}/libdotenv.a {{ out_dir }}/*-release.o
+        ranlib {{ lib_dir }}/libdotenv.a
+    fi
+
+release threads=num_cpus():
+    just compile release {{ threads }}
+    just archive release
+
+debug threads=num_cpus():
+    just compile debug {{ threads }}
+    just archive debug
+
+bear:
+    bear -- just compile
+    sed -i 's|"/nix/store/[^"]*gcc[^"]*|\"gcc|g' compile_commands.json

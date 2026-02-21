@@ -1,7 +1,6 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <signal.h>
-#include <sodium.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,8 +14,10 @@
 #include <h2o/http1.h>
 #include <h2o/http2.h>
 #include <h2o/memcached.h>
+#include <sodium.h>
 #include <sqlite3.h>
 
+#include <dotenv.h>
 #include <yueah/cli.h>
 #include <yueah/config.h>
 #include <yueah/cookie.h>
@@ -253,9 +254,31 @@ NotCompress:
   yueah_get_cookie(&pool, cookie, "test", 0);
 */
 
+  int matches = load_dotenv(".env");
+  if (matches < 0)
+    yueah_log_error("Failed to load .env");
+
+  if (matches == 0)
+    yueah_log_error("No env vars found");
+
   mem_t jwt_len = 0;
-  char *jwt = yueah_jwt_encode(&pool, "test", Access, &jwt_len);
-  yueah_jwt_verify(&pool, jwt, jwt_len, "test", Access);
+  char *jwt = yueah_jwt_encode(&pool, "test", Refresh, &jwt_len);
+  if (!jwt) {
+    yueah_log_error("Failed to encode jwt");
+    h2o_mem_clear_pool(&pool);
+    uv_loop_close(ctx.loop);
+    uv_loop_delete(ctx.loop);
+    return -1;
+  }
+
+  bool match = yueah_jwt_verify(&pool, jwt, jwt_len, "test", Refresh);
+  if (!match) {
+    yueah_log_error("Signatures do not match");
+    h2o_mem_clear_pool(&pool);
+    uv_loop_close(ctx.loop);
+    uv_loop_delete(ctx.loop);
+    return -1;
+  }
 
   yueah_log(Info, true, "yueah: running on %s:%u", yueah_config->network->ip,
             yueah_config->network->port);

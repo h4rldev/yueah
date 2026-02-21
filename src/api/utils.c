@@ -3,8 +3,8 @@
 #include <h2o.h>
 #include <yyjson.h>
 
-#include <log.h>
-#include <shared.h>
+#include <yueah/log.h>
+#include <yueah/shared.h>
 
 #include <api/utils.h>
 

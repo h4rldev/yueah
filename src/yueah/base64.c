@@ -21,7 +21,7 @@ char *yueah_base64_encode(h2o_mem_pool_t *pool, unsigned char *content,
     return NULL;
   }
 
-  *out_len = base64_len;
+  *out_len = base64_len - 1;
   return base64;
 }
 
@@ -42,9 +42,6 @@ unsigned char *yueah_base64_decode(h2o_mem_pool_t *pool, char *base64,
     yueah_log_error("sodium_base642bin failed: code %d, last: %s", rc, last);
     return NULL;
   }
-
-  buf[buf_len] = '\0';
-  yueah_log_debug("buf: %s", buf);
 
   *out_len = buf_len;
   return buf;

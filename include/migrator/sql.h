@@ -6,7 +6,7 @@
 
 #include <sqlite3.h>
 
-#include <mem.h>
+#include <migrator/mem.h>
 
 typedef enum { TIMESTAMP_U64, ID_U64 } id_type_t;
 typedef struct {

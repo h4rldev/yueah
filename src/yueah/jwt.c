@@ -186,6 +186,7 @@ static char *yueah_jwt_encode_header(h2o_mem_pool_t *pool,
 
   encoded_header = yueah_base64_encode(pool, (unsigned char *)header_json,
                                        header_json_len, &base64_out_len);
+
   if (!encoded_header) {
     yueah_log_error("Error encoding header");
     return NULL;
@@ -301,8 +302,6 @@ yueah_jwt_create_signature_from_str(h2o_mem_pool_t *pool,
   unsigned char *signature = NULL;
   unsigned char hash[crypto_auth_hmacsha512_BYTES];
 
-  yueah_log_debug("body: %s", body);
-
   rc = crypto_auth_hmacsha512(hash, (unsigned char *)body, body_len, key);
   if (rc != 0) {
     yueah_log_error("Failed to hash hmac, return code %d", rc);
@@ -312,11 +311,6 @@ yueah_jwt_create_signature_from_str(h2o_mem_pool_t *pool,
   signature =
       h2o_mem_alloc_pool(pool, unsigned char, crypto_auth_hmacsha512_BYTES);
   memcpy(signature, hash, crypto_auth_hmacsha512_BYTES);
-
-  signature[crypto_auth_hmacsha512_BYTES] = '\0';
-
-  print_hex("key", key);
-  print_hex("signature", signature);
 
   return signature;
 }
@@ -330,13 +324,15 @@ yueah_jwt_create_signature(h2o_mem_pool_t *pool, const unsigned char *key,
   mem_t payload_out_len = 0;
   mem_t concat_len = 0;
 
-  char *payload_json = yueah_payload_to_json(pool, claims, &payload_out_len);
   char *header_json = yueah_jwt_header_to_json(pool, header, &header_json_len);
+  char *payload_json = yueah_payload_to_json(pool, claims, &payload_out_len);
 
-  concat_len = header_json_len + payload_out_len + 2;
+  concat_len = header_json_len + payload_out_len + 1;
 
   char *concat = h2o_mem_alloc_pool(pool, char, concat_len);
-  snprintf(concat, concat_len, "%s.%s", header_json, payload_json);
+  memcpy(concat, header_json, header_json_len);
+  memcpy(concat + header_json_len, ".", 1);
+  memcpy(concat + header_json_len + 1, payload_json, payload_out_len);
 
   return yueah_jwt_create_signature_from_str(pool, key, concat, concat_len);
 }
@@ -409,6 +405,7 @@ char *yueah_jwt_encode(h2o_mem_pool_t *pool, const char *payload,
   char *concat = h2o_mem_alloc_pool(pool, char, concat_len);
   snprintf(concat, concat_len, "%s.%s.%s", encoded_header, encoded_payload,
            encoded_signature);
+
   *out_len = concat_len;
   return concat;
 }
@@ -439,12 +436,6 @@ bool yueah_jwt_verify(h2o_mem_pool_t *pool, const char *token, mem_t token_len,
 
   sscanf(token, "%[^.].%[^.].%s", header, payload, signature);
 
-  // yueah_log_debug("token: %s", token);
-  // yueah_log_debug("header: %s", header);
-  // yueah_log_debug("header_len: %ld", header_len);
-  // yueah_log_debug("payload: %s", payload);
-  // yueah_log_debug("signature: %s", signature);
-
   yueah_base64_decode(pool, header, header_len, 1024, &header_json_len);
   if (header_json_len < 10) {
     yueah_log_error("Failed to decode header");
@@ -458,7 +449,7 @@ bool yueah_jwt_verify(h2o_mem_pool_t *pool, const char *token, mem_t token_len,
   }
 
   mem_t concat_len = header_json_len + payload_json_len + 1;
-  unsigned char *concat = h2o_mem_alloc_pool(pool, unsigned char, concat_len);
+  char *concat = h2o_mem_alloc_pool(pool, char, concat_len);
 
   header_json =
       yueah_base64_decode(pool, header, header_len, 1024, &header_json_len);
@@ -472,22 +463,15 @@ bool yueah_jwt_verify(h2o_mem_pool_t *pool, const char *token, mem_t token_len,
   memcpy(concat + header_json_len + 1, payload_json, payload_json_len);
   memset(concat + header_json_len + 1 + payload_json_len, 0, 1);
 
-  // yueah_log_debug("concat: %s", concat);
   unsigned char *generated_signature = yueah_jwt_create_signature_from_str(
       pool, key, (char *)concat, concat_len);
   decoded_signature = yueah_base64_decode(
       pool, signature, signature_len,
       signature_len + crypto_auth_hmacsha512_BYTES, &decoded_signature_len);
 
-  print_hex("generated signature", generated_signature);
-  print_hex("decoded signature", decoded_signature);
-
   if (sodium_memcmp(generated_signature, decoded_signature,
-                    decoded_signature_len) != 0) {
-
-    yueah_log_error("Signatures don't match");
+                    decoded_signature_len) != 0)
     return false;
-  }
 
   return true;
 }
