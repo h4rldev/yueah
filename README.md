@@ -16,6 +16,10 @@ A small blogging backend written in C.
 
 - [SQLite3](sqlite.org) for database functionality
 
+### yueah's dotenv's Dependencies
+
+- [glibc](https://www.gnu.org/software/libc/)
+
 ### libH2O's dependencies
 
 - [libuv](https://github.com/libuv/libuv) for libh2o's event loop
@@ -34,6 +38,14 @@ A small blogging backend written in C.
 just ensure_h2o
 ```
 
+### Building yueah's dotenv
+
+(Done automatically when missing)
+
+```
+just ensure_dotenv
+```
+
 ### Building yueah
 
 #### Release
@@ -50,22 +62,16 @@ just debug
 
 ### Building yueah's migrator
 
-#### Prerequisite
-
-```bash
-cd migrator
-```
-
 #### Release
 
 ```bash
-just release
+just build-migrator release
 ```
 
 #### Debug
 
 ```bash
-just debug
+just build-migratore debug
 ```
 
 ### Running yueah's migrator

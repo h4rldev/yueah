@@ -142,6 +142,9 @@ debug threads=num_cpus():
     just compile debug {{ threads }}
     just link debug
 
+build-migrator type="debug" threads=num_cpus():
+    just --justfile migrator/justfile {{ type }} {{ threads }}
+
 migrate:
     just --justfile migrator/justfile migrate
 
