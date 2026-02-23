@@ -15,7 +15,7 @@ int blog_not_found(h2o_handler_t *handler, h2o_req_t *req) {
 
   sqlite3 *db;
 
-  if (db_connect(yueah_state->db_path, &db, READ | WRITE) != 0) {
+  if (yueah_db_connect(yueah_state->db_path, &db, READ | WRITE) != 0) {
     yueah_log(Error, true, "failed to init db");
     return -1;
   }
@@ -28,9 +28,9 @@ int blog_not_found(h2o_handler_t *handler, h2o_req_t *req) {
   snprintf(html_buffer, 1024, "Hello!! posts exists: %s",
            exists ? "true" : "false");
 
-  db_disconnect(db);
+  yueah_db_disconnect(db);
 
   printf("%s\n", html_buffer);
 
-  return error_response(req, 404, html_buffer);
+  return generic_response(req, 404, html_buffer);
 }

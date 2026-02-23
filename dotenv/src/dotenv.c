@@ -6,6 +6,9 @@
 #include <dotenv.h>
 
 static void trim(char *str) {
+  if (!str)
+    return;
+
   char *start = str;
   while (isspace(*start))
     start++;
@@ -30,6 +33,9 @@ static void to_upper(char *str) {
 }
 
 static int remove_quotes(char *str) {
+  if (!str)
+    return -1;
+
   size_t len = strlen(str);
 
   if (len < 2)
@@ -45,6 +51,9 @@ static int remove_quotes(char *str) {
 }
 
 static int parse_line(char *line, char *key, char *value) {
+  if (!line)
+    return -1;
+
   if (line[0] == '#' || line[0] == '\n')
     return -1;
 

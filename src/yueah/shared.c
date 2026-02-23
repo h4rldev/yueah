@@ -30,3 +30,12 @@ void print_hex(const char *label, const char *str, size_t size) {
   }
   printf("\n");
 }
+
+char *yueah_iovec_to_str(h2o_mem_pool_t *pool, h2o_iovec_t *iovec) {
+  mem_t len = iovec->len;
+  char *str = h2o_mem_alloc_pool(pool, char *, len + 1);
+  memcpy(str, iovec->base, len);
+  str[len] = '\0';
+
+  return str;
+}

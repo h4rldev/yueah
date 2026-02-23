@@ -146,6 +146,9 @@ int main(int argc, char **argv) {
     goto End;
   }
 
+  if (db_args->create_db)
+    create_db(db_args->db_path);
+
   if (db_args->clear_migrations && db_args->create_db == false)
     clear_migrations(db_args->db_path);
 

@@ -118,6 +118,14 @@ int db_disconnect(sqlite3 *db) {
   return -1;
 }
 
+int create_db(char *db_path) {
+  migrator_log(Debug, false, "Creating db at %s", db_path);
+  FILE *fp = fopen(db_path, "w");
+
+  fclose(fp);
+  return 0;
+}
+
 int clear_migrations(char *db_path) {
   sqlite3 *db;
 

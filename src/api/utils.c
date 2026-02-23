@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <string.h>
 
 #include <h2o.h>
@@ -204,7 +205,113 @@ static char *error_resp_to_json(h2o_mem_pool_t *pool, yyjson_mut_doc *doc,
   return json;
 }
 
-int error_response(h2o_req_t *req, int status, const char *message) {
+char *get_form_val(h2o_mem_pool_t *pool, const char *key, char **input,
+                   mem_t *val_len) {
+  char *output = NULL;
+
+  if (!key || !input || !val_len)
+    return NULL;
+
+  mem_t key_idx = 0;
+  mem_t key_len = 0;
+
+  for (mem_t i = 0; input[i] != NULL; i++) {
+    key_len = strlen(key);
+    if (strncmp(input[i], key, key_len) != 0)
+      continue;
+
+    key_idx = i;
+  }
+
+  char *val = input[key_idx] + key_len + 1;
+  mem_t _val_len = strlen(val) + 1;
+  output = h2o_mem_alloc_pool(pool, char, _val_len);
+  memcpy(output, val, _val_len);
+
+  *val_len = _val_len;
+  return output;
+}
+
+void urldecode(char *dst, const char *src) {
+  char a, b;
+  while (*src) {
+    if (*src == '%' && ((a = src[1]) && (b = src[2])) && isxdigit(a) &&
+        isxdigit(b)) {
+      if (a >= 'a')
+        a -= 'a' - 'A';
+      if (a >= 'A')
+        a -= ('A' - 10);
+      else
+        a -= '0';
+
+      if (b >= 'a')
+        b -= 'a' - 'A';
+      if (b >= 'A')
+        b -= ('A' - 10);
+      else
+        b -= '0';
+
+      *dst++ = 16 * a + b;
+      src += 3;
+    } else {
+      *dst++ = *src++;
+    }
+  }
+  *dst = '\0';
+}
+
+/*
+ * Parses the body of a post request
+ *
+ *
+ * [pool]      Memory pool to allocate the array from
+ *
+ * [input]     The body of the post request
+ *
+ * [input_len] The length of the body
+ *
+ *
+ * Returns an array of strings terminated with a null which is at the last byte
+ * of the array
+ */
+char **parse_post_body(h2o_mem_pool_t *pool, const char *input,
+                       const mem_t input_len) {
+
+  if (!input)
+    return NULL;
+
+  if (input_len == 0)
+    return NULL;
+
+  char *decoded_input = h2o_mem_alloc_pool(pool, char, input_len + 1);
+  urldecode(decoded_input, input);
+
+  mem_t array_len = 1;
+  int part_idx = 0;
+
+  for (mem_t i = 0; i < input_len; i++)
+    if (decoded_input[i] == '&')
+      array_len = array_len + 2;
+
+  char *ptr = decoded_input;
+  char **res = h2o_mem_alloc_pool(pool, char *, array_len);
+  char *next = strtok(ptr, "&");
+  while (next != NULL) {
+    mem_t part_len = strlen(next);
+
+    res[part_idx] = h2o_mem_alloc_pool(pool, char, part_len + 1);
+    memcpy(res[part_idx], next, part_len);
+    res[part_idx][part_len] = '\0';
+
+    part_idx++;
+    next = strtok(NULL, "&");
+  }
+
+  res[array_len - 1] = NULL;
+  return res;
+}
+
+int generic_response(h2o_req_t *req, int status, const char *message) {
   h2o_generator_t generator = {NULL, NULL};
   error_response_t *error_response =
       h2o_mem_alloc_pool(&req->pool, error_response_t, 1);

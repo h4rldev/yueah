@@ -24,4 +24,6 @@ void print_hex_unsigned(const char *label, const unsigned char *str,
 void print_hex(const char *label, const char *str,
                size_t size); // to not depend on null terminator
 
+char *yueah_iovec_to_str(h2o_mem_pool_t *pool, h2o_iovec_t *iovec);
+
 #endif // !YUEAH_SHARED_H

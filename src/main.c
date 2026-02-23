@@ -28,6 +28,7 @@
 #include <yueah/meta.h>
 #include <yueah/shared.h>
 
+#include <api/auth.h>
 #include <api/blog.h>
 
 static h2o_globalconf_t config;
@@ -109,7 +110,7 @@ static int not_found(h2o_handler_t *handler, h2o_req_t *req) {
           "sub{font-size: 0.7em;}"
           "</style>"
           "<h1>Error 404</h1>"
-          "<p>Not found</p>"
+          "<p>Not found, are you supposed to be here?</p>"
           "<sub><a href=\"https://github.com/h4rldev/portfolio\" "
           "target=\"_blank\">h4rl's portfolio :3</a>, %d</sub>",
           get_year());
@@ -212,6 +213,12 @@ int main(int argc, char **argv) {
   if (log2file)
     h2o_access_log_register(pathconf, log2file);
 
+  pathconf = register_handler(hostconf, "/auth/register", post_register_form);
+  if (logfh)
+    h2o_access_log_register(pathconf, logfh);
+  if (log2file)
+    h2o_access_log_register(pathconf, log2file);
+
   if (!yueah_config->compression->enabled)
     goto NotCompress;
 
@@ -259,10 +266,12 @@ NotCompress:
     yueah_log_error("Failed to load .env");
 
   if (matches == 0)
-    yueah_log_error("No env vars found");
+    yueah_log_warning("No env vars found");
 
   mem_t jwt_len = 0;
-  char *jwt = yueah_jwt_encode(&pool, "test", Refresh, &jwt_len);
+  yueah_jwt_claims_t *claims =
+      yueah_jwt_create_claims(&pool, "test", "test", "test", 3600, 0);
+  char *jwt = yueah_jwt_encode(&pool, claims, Refresh, &jwt_len);
   if (!jwt) {
     yueah_log_error("Failed to encode jwt");
     h2o_mem_clear_pool(&pool);
@@ -279,6 +288,8 @@ NotCompress:
     uv_loop_delete(ctx.loop);
     return -1;
   }
+
+  yueah_log_info("jwt token is: %s", match ? "valid" : "invalid");
 
   yueah_log(Info, true, "yueah: running on %s:%u", yueah_config->network->ip,
             yueah_config->network->port);

@@ -16,6 +16,7 @@ typedef struct {
 
 int db_connect(const char *db_path, sqlite3 **db, bool rw, bool create);
 int db_disconnect(sqlite3 *db);
+int create_db(char *db_path);
 int clear_migrations(char *db_path);
 int get_user_version(sqlite3 *db);
 int set_user_version(sqlite3 *db, int user_version);

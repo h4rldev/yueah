@@ -7,7 +7,7 @@ lib_dir := '../lib'
 include_dir := '../include'
 h2o_include := lib_dir + '/include'
 debug_compile_flags := '-ggdb -fsanitize=address -Wall -Wextra -pedantic -Wno-unused-parameter -Wno-variadic-macros'
-release_compile_flags := '-O2 -flto'
+release_compile_flags := '-O2'
 color_reset := "\\033[0m"
 color_red := "\\033[31m"
 color_green := "\\033[32m"

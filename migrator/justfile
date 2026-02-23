@@ -102,7 +102,11 @@ debug threads=num_cpus():
 
 migrate:
     just release
-    {{ bin_dir }}/migrator ./migrator/migrations ./yueah.db
+    {{ bin_dir }}/migrator ../migrations ./yueah.db
+
+create-db:
+    just release
+    {{ bin_dir }}/migrator --create ../migrations ./yueah.db
 
 bear:
     bear -- just compile debug true

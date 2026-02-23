@@ -148,6 +148,9 @@ build-migrator type="debug" threads=num_cpus():
 migrate:
     just --justfile migrator/justfile migrate
 
+create-db:
+    just --justfile migrator/justfile create-db
+
 bear:
     bear -- just compile debug true
     sed -i 's|"/nix/store/[^"]*gcc[^"]*|\"gcc|g' compile_commands.json

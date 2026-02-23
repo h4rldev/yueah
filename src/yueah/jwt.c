@@ -215,9 +215,10 @@ static char *yueah_generate_jti(h2o_mem_pool_t *pool) {
   return jti;
 }
 
-static yueah_jwt_claims_t *
-yueah_jwt_create_claims(h2o_mem_pool_t *pool, const char *iss, const char *sub,
-                        const char *aud, const mem_t exp, const mem_t nbf) {
+yueah_jwt_claims_t *yueah_jwt_create_claims(h2o_mem_pool_t *pool,
+                                            const char *iss, const char *sub,
+                                            const char *aud, const mem_t exp,
+                                            const mem_t nbf) {
   yueah_jwt_claims_t *claims = h2o_mem_alloc_pool(pool, yueah_jwt_claims_t, 1);
 
   time_t now = time(NULL);
@@ -378,15 +379,14 @@ static char *yueah_jwt_encode_payload(h2o_mem_pool_t *pool,
   return encoded_payload;
 }
 
-char *yueah_jwt_encode(h2o_mem_pool_t *pool, const char *payload,
+char *yueah_jwt_encode(h2o_mem_pool_t *pool, const yueah_jwt_claims_t *payload,
                        yueah_jwt_key_type_t key_type, mem_t *out_len) {
   const unsigned char *key = yueah_get_jwt_key(key_type);
   if (!key)
     return NULL;
 
   yueah_jwt_header_t *header = yueah_jwt_create_header(pool);
-  yueah_jwt_claims_t *claims =
-      yueah_jwt_create_claims(pool, "yueah", "yueah", "yueah", 3600, 0);
+  const yueah_jwt_claims_t *claims = payload;
 
   mem_t encoded_header_len = 0;
   mem_t encoded_payload_len = 0;

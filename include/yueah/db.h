@@ -9,9 +9,9 @@
 typedef enum {
   READ = 1 << 0,
   WRITE = 1 << 1,
-} db_flags_t;
+} yueah_db_flags_t;
 
-int db_connect(const char *db_path, sqlite3 **db, int flags);
-int db_disconnect(sqlite3 *db);
+int yueah_db_connect(const char *db_path, sqlite3 **db, int flags);
+int yueah_db_disconnect(sqlite3 *db);
 
 #endif // !YUEAH_DB_H

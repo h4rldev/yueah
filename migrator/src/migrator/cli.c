@@ -55,7 +55,7 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
     goto Ok;
   }
 
-  while ((arg = getopt_long(argc, argv, ":hvm:d:n:r", long_options,
+  while ((arg = getopt_long(argc, argv, ":hvcm:d:n:r", long_options,
                             &option_index)) != -1) {
     switch (arg) {
     case 'v':
@@ -164,7 +164,8 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
     }
 
     db_args->db_path = arena_strdup(arena, temp_db_path, 1024);
-  } else if (strlen(argv[optind + 1]) != 0 && db_args->create_db == false) {
+    migrator_log(Debug, false, "db_path: %s", db_args->db_path);
+  } else if (strlen(argv[optind + 1]) != 0) {
     if (!is_path(argv[optind + 1]) && db_args->create_db == false) {
       migrator_log(Error, false, "db_path is not a path\n");
       print_usage();
@@ -172,6 +173,7 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
     }
 
     db_args->db_path = arena_strdup(arena, argv[optind + 1], 1024);
+    migrator_log(Debug, false, "db_path2: %s", db_args->db_path);
   }
 
   if (temp_migration_name[0] && temp_migrations_path[0])
