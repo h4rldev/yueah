@@ -67,9 +67,9 @@ unsigned char *yueah_cookie_encrypt(h2o_mem_pool_t *pool,
 
   char *key_buf = getenv("YUEAH_AES_KEY");
   if (!key_buf || strlen(key_buf) < crypto_secretbox_KEYBYTES) {
-    yueah_log(
-        Error, true,
-        "Invalid YUEAH_AES_KEY, too short, generating one, check key.txt");
+    yueah_log(Error, true,
+              "Invalid YUEAH_AES_KEY, too short, generating one, check "
+              "cookie_key.txt");
     if (generate_yueah_key() < 0)
       return NULL;
 
@@ -280,8 +280,13 @@ char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
   if (mask & PATH)
     path = va_arg(va, char *);
 
-  if (mask & EXPIRES)
-    expires = unix_time_to_date_header(va_arg(va, uint64_t));
+  if (mask & EXPIRES) {
+    mem_t expire_time = va_arg(va, uint64_t);
+    mem_t now = time(NULL);
+    mem_t expires_time = now + expire_time;
+
+    expires = unix_time_to_date_header(expires_time);
+  }
 
   if (mask & MAX_AGE) {
     max_age = va_arg(va, uint64_t);
@@ -307,7 +312,7 @@ char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
       yueah_base64_encode(pool, cookie_contents_encrypted, encrypted_out_len,
                           &base64_encode_out_len);
 
-  snprintf(cookie_header, header_size, "Set-Cookie: %s=%s;", cookie_name,
+  snprintf(cookie_header, header_size, "%s=%s;", cookie_name,
            cookie_contents_encoded);
 
   if (same_site > -1) {
@@ -336,6 +341,7 @@ char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
     strlcat(cookie_header, " HttpOnly;", header_size);
 
   if (expires) {
+
     strlcat(cookie_header, " Expires=", header_size);
     strlcat(cookie_header, expires, header_size);
     strlcat(cookie_header, ";", header_size);

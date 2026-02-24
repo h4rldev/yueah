@@ -219,6 +219,12 @@ int main(int argc, char **argv) {
   if (log2file)
     h2o_access_log_register(pathconf, log2file);
 
+  pathconf = register_handler(hostconf, "/auth/login", post_login_form);
+  if (logfh)
+    h2o_access_log_register(pathconf, logfh);
+  if (log2file)
+    h2o_access_log_register(pathconf, log2file);
+
   if (!yueah_config->compression->enabled)
     goto NotCompress;
 
@@ -267,29 +273,6 @@ NotCompress:
 
   if (matches == 0)
     yueah_log_warning("No env vars found");
-
-  mem_t jwt_len = 0;
-  yueah_jwt_claims_t *claims =
-      yueah_jwt_create_claims(&pool, "test", "test", "test", 3600, 0);
-  char *jwt = yueah_jwt_encode(&pool, claims, Refresh, &jwt_len);
-  if (!jwt) {
-    yueah_log_error("Failed to encode jwt");
-    h2o_mem_clear_pool(&pool);
-    uv_loop_close(ctx.loop);
-    uv_loop_delete(ctx.loop);
-    return -1;
-  }
-
-  bool match = yueah_jwt_verify(&pool, jwt, jwt_len, "test", Refresh);
-  if (!match) {
-    yueah_log_error("Signatures do not match");
-    h2o_mem_clear_pool(&pool);
-    uv_loop_close(ctx.loop);
-    uv_loop_delete(ctx.loop);
-    return -1;
-  }
-
-  yueah_log_info("jwt token is: %s", match ? "valid" : "invalid");
 
   yueah_log(Info, true, "yueah: running on %s:%u", yueah_config->network->ip,
             yueah_config->network->port);

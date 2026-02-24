@@ -37,6 +37,8 @@ typedef struct {
  *
  * [pool]  Memory pool to allocate from
  *
+ * [cookie_name]  Name of the cookie
+ *
  * [contents]  Array of strings to be set and encrypted for cookie
  *
  * [mask]  Bitmask to set cookie attributes, see
@@ -48,8 +50,8 @@ typedef struct {
  *
  * Returns a yueah_cookie_t struct with the proper header.
  */
-char *yueah_set_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
-                           char **contents, yueah_cookie_mask mask, ...);
+char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
+                       char **contents, yueah_cookie_mask mask, ...);
 
 // will get one cookie content at a time, will work on the same header but with
 // different cookie names
