@@ -205,11 +205,10 @@ static char *error_resp_to_json(h2o_mem_pool_t *pool, yyjson_mut_doc *doc,
   return json;
 }
 
-char *get_form_val(h2o_mem_pool_t *pool, const char *key, char **input,
-                   mem_t *val_len) {
+char *get_form_val(h2o_mem_pool_t *pool, const char *key, char **input) {
   char *output = NULL;
 
-  if (!key || !input || !val_len)
+  if (!key || !input)
     return NULL;
 
   mem_t key_idx = 0;
@@ -224,11 +223,10 @@ char *get_form_val(h2o_mem_pool_t *pool, const char *key, char **input,
   }
 
   char *val = input[key_idx] + key_len + 1;
-  mem_t _val_len = strlen(val) + 1;
-  output = h2o_mem_alloc_pool(pool, char, _val_len);
-  memcpy(output, val, _val_len);
+  mem_t val_len = strlen(val) + 1;
+  output = h2o_mem_alloc_pool(pool, char, val_len);
+  memcpy(output, val, val_len);
 
-  *val_len = _val_len;
   return output;
 }
 

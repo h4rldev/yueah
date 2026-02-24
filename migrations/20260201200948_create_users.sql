@@ -7,3 +7,7 @@ created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 role TEXT NOT NULL DEFAULT 'poster',
 CHECK (role IN ('poster', 'admin', 'banned'))
 ) ;
+
+CREATE INDEX idx_users_created_at ON users(created_at);
+CREATE INDEX idx_users_role ON users(role);
+CREATE INDEX idx_users_role_created ON users(role, created_at);

@@ -38,8 +38,7 @@ void urldecode(char *dst, const char *src);
  * Returns the value of the key and populates the val_len with the length of the
  * value
  */
-char *get_form_val(h2o_mem_pool_t *pool, const char *key, char **input,
-                   mem_t *val_len);
+char *get_form_val(h2o_mem_pool_t *pool, const char *key, char **input);
 
 /*
  * Parses the body of a post request

@@ -134,6 +134,12 @@ int main(int argc, char **argv) {
   arena = arena_init(MiB(32), MiB(16));
   db_args = parse_args(arena, argc, argv);
 
+  if (!db_args->db_path ||
+      !db_args->migrations_path) { // help or version was called
+    return_status = 0;
+    goto End;
+  }
+
   if (db_args->return_status != 0) {
     return_status = db_args->return_status;
     goto End;

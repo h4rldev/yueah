@@ -148,6 +148,9 @@ build-migrator type="debug" threads=num_cpus():
 migrate:
     just --justfile migrator/justfile migrate
 
+clear-migrations:
+    just --justfile migrator/justfile clear-migrations
+
 create-db:
     just --justfile migrator/justfile create-db
 
