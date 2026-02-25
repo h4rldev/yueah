@@ -134,8 +134,7 @@ int main(int argc, char **argv) {
   arena = arena_init(MiB(32), MiB(16));
   db_args = parse_args(arena, argc, argv);
 
-  if (!db_args->db_path ||
-      !db_args->migrations_path) { // help or version was called
+  if (db_args->help || db_args->version) {
     return_status = 0;
     goto End;
   }
@@ -158,7 +157,9 @@ int main(int argc, char **argv) {
   if (db_args->clear_migrations && db_args->create_db == false)
     clear_migrations(db_args->db_path);
 
-  if (db_args->migration_name && db_args->migrations_path) {
+  if (db_args->create_migration) {
+    migrator_log(Info, false, "Creating migration file: %s",
+                 db_args->migration_name);
     if (create_migration_file(arena, db_args->migration_name,
                               db_args->migrations_path) < 0)
       return_status = -1;
@@ -167,10 +168,12 @@ int main(int argc, char **argv) {
     goto End;
   }
 
-  return_status = migrate();
-  if (return_status < 0) {
-    migrator_log(Error, false, "migrate failed");
-    goto End;
+  if (db_args->migrations_path_added && db_args->db_path_added) {
+    return_status = migrate();
+    if (return_status < 0) {
+      migrator_log(Error, false, "migrate failed");
+      goto End;
+    }
   }
 
 End:

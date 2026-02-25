@@ -79,14 +79,6 @@ unsigned char *yueah_cookie_encrypt(h2o_mem_pool_t *pool,
   memcpy(key, key_buf, crypto_secretbox_KEYBYTES);
 
   randombytes_buf(nonce, crypto_secretbox_NONCEBYTES);
-  /*
-    yueah_log(Debug, true, "nonce:");
-    #ifdef YUEAH_DEBUG
-      for (mem_t i = 0; i < crypto_secretbox_NONCEBYTES; i++)
-        printf("%02x ", nonce[i]);
-      puts("");
-    #endif
-  */
 
   memcpy(ciphertext, nonce, crypto_secretbox_NONCEBYTES);
   crypto_secretbox_easy(ciphertext + crypto_secretbox_NONCEBYTES, content,
@@ -124,21 +116,6 @@ unsigned char *yueah_cookie_decrypt(h2o_mem_pool_t *pool, unsigned char *bin,
   memmove(ciphertext, bin + crypto_secretbox_NONCEBYTES,
           bin_len - crypto_secretbox_NONCEBYTES);
 
-  /*
-    yueah_log(Debug, true, "pulled nonce:");
-  #ifdef YUEAH_DEBUG
-    for (mem_t i = 0; i < crypto_secretbox_NONCEBYTES; i++)
-      printf("%02x ", nonce[i]);
-    puts("");
-  #endif
-
-    yueah_log(Debug, true, "pulled ciphertext:");
-  #ifdef YUEAH_DEBUG
-    for (mem_t i = 0; i < bin_len - crypto_secretbox_NONCEBYTES; i++)
-      printf("%02x ", ciphertext[i]);
-    puts("");
-  #endif
-  */
   rc = crypto_secretbox_open_easy(
       result, ciphertext, bin_len - crypto_secretbox_NONCEBYTES, nonce, key);
   if (rc != 0) {
@@ -146,9 +123,9 @@ unsigned char *yueah_cookie_decrypt(h2o_mem_pool_t *pool, unsigned char *bin,
     return NULL;
   }
 
+  decrypted_len -= 2;
   *out_len = decrypted_len;
   result[decrypted_len] = '\0';
-
   return result;
 }
 
@@ -371,21 +348,20 @@ char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
   return cookie_header;
 }
 
-static char *parse_cookie(h2o_mem_pool_t *pool, const char *cookie_header,
+static char *parse_cookie(h2o_mem_pool_t *pool,
+                          const unsigned char *cookie_header,
                           const char *cookie_name) {
   char format[4096] = {0};
   snprintf(format, 4096, "%s=", cookie_name);
   yueah_log_debug("header: %s", cookie_header);
 
-  char *res = strstr(cookie_header, format);
+  char *res = strstr((char *)cookie_header, format);
   if (!res) {
     yueah_log_error("Invalid cookie header");
     return NULL;
   }
 
-  char *end = strchr(res, ';');
-  if (end)
-    *end = '\0';
+  yueah_log_debug("cookie_content: %s", res);
 
   char *cookie_content = h2o_mem_alloc_pool(pool, char *, strlen(res) + 1);
   memcpy(cookie_content, res + strlen(format),
@@ -394,12 +370,35 @@ static char *parse_cookie(h2o_mem_pool_t *pool, const char *cookie_header,
   return cookie_content;
 }
 
-char *yueah_get_cookie_content(h2o_mem_pool_t *pool, char *cookie_header,
-                               char *cookie_name, mem_t type) {
-  // char *cookie_content = NULL;
-
+unsigned char *yueah_get_cookie_content(h2o_mem_pool_t *pool,
+                                        unsigned char *cookie_header,
+                                        char *cookie_name, mem_t *out_len) {
+  unsigned char *decrypted_content = NULL;
   char *content = parse_cookie(pool, cookie_header, cookie_name);
-  yueah_log_debug("content: %s", content);
+  if (!content) {
+    yueah_log_error("Failed to parse cookie");
+    return NULL;
+  }
 
-  return NULL;
+  mem_t decoded_content_len = 0;
+  unsigned char *decoded_content = yueah_base64_decode(
+      pool, content, strlen(content), 4096, &decoded_content_len);
+
+  mem_t decrypted_len = 0;
+  decrypted_content = yueah_cookie_decrypt(pool, decoded_content,
+                                           decoded_content_len, &decrypted_len);
+  if (!decrypted_content || decrypted_len < 10) {
+    yueah_log_error("Failed to decrypt cookie");
+    return NULL;
+  }
+
+  char *end = strchr((char *)decrypted_content, ';');
+  if (end)
+    *end = '\0';
+
+  decrypted_len = (unsigned char *)end - decrypted_content;
+  *out_len = decrypted_len;
+  print_hex_unsigned("content", decrypted_content, decrypted_len);
+
+  return decrypted_content;
 }

@@ -21,17 +21,6 @@ typedef enum { INVALID = -1, LAX, STRICT, NONE } yueah_same_site_t;
 
 typedef int yueah_cookie_mask;
 
-typedef struct {
-  char *name;
-  char *content; // Encrypted by default
-  char *domain;  // is NULL if not set
-  yueah_same_site_t same_site;
-  bool http_only : 1;
-  bool secure : 1;
-  mem_t max_age; // is 0 if not set
-  mem_t expires; // is 0 if not set
-} yueah_cookie_t;
-
 /*
  * Construct a Set-Cookie header with given arguments
  *
@@ -55,7 +44,8 @@ char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
 
 // will get one cookie content at a time, will work on the same header but with
 // different cookie names
-yueah_cookie_t *yueah_get_cookie(h2o_mem_pool_t *pool, char *cookie_header,
-                                 char *cookie_name, mem_t type);
+unsigned char *yueah_get_cookie_content(h2o_mem_pool_t *pool,
+                                        unsigned char *cookie_header,
+                                        char *cookie_name, mem_t *out_len);
 
 #endif // !YUEAH_COOKIE_H

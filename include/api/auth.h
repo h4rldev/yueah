@@ -6,4 +6,6 @@
 int post_register_form(h2o_handler_t *handler, h2o_req_t *req);
 int post_login_form(h2o_handler_t *handler, h2o_req_t *req);
 
+int get_refresh(h2o_handler_t *handler, h2o_req_t *req);
+
 #endif // !YUEAH_API_AUTH_H

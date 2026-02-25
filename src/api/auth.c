@@ -36,6 +36,7 @@ typedef enum {
 
 typedef enum {
   SqlSuccess,
+  IncorrectBlacklist,
   Fetch,
   IncompleteTable,
   NotFound,
@@ -47,6 +48,33 @@ typedef struct {
   yueah_sql_err_type_t err_type;
   yueah_constraint_err_t constraint_err;
 } yueah_sql_err_t;
+
+typedef enum {
+  MethodNotAllowed,
+  FailedToFindContentType,
+  WrongContentType,
+  Success,
+} yueah_verify_err_t;
+static yueah_verify_err_t verify_headers(h2o_req_t *req, char *method,
+                                         mem_t method_len, char *content_type,
+                                         mem_t content_type_len) {
+  if (!h2o_memis(req->method.base, req->method.len, method, method_len))
+    return MethodNotAllowed;
+
+  if (content_type != NULL) {
+    int header_index =
+        h2o_find_header(&req->headers, H2O_TOKEN_CONTENT_TYPE, -1);
+    if (header_index == -1)
+      return FailedToFindContentType;
+
+    if (!h2o_memis(req->headers.entries[header_index].value.base,
+                   req->headers.entries[header_index].value.len, content_type,
+                   content_type_len))
+      return WrongContentType;
+  }
+
+  return Success;
+}
 
 static yueah_constraint_err_t get_constraint_err(const char *error_msg) {
   if (strstr(error_msg, "UNIQUE constraint failed: users.username") != NULL)
@@ -197,23 +225,130 @@ static int get_user(h2o_mem_pool_t *pool, sqlite3 *conn, const char *username,
   return 0;
 }
 
+typedef enum {
+  AccessBlacklist,
+  RefreshBlacklist,
+} yueah_blacklist_type_t;
+
+static int query_blacklist(sqlite3 *conn, const char *token,
+                           yueah_blacklist_type_t blacklist,
+                           yueah_sql_err_t *err) {
+  int rc = 0;
+  int fn_rc = 0;
+  sqlite3_stmt *stmt;
+  const char *sql;
+
+  switch (blacklist) {
+  case AccessBlacklist:
+    sql = "SELECT * FROM access_blacklist WHERE token = ?;";
+    break;
+  case RefreshBlacklist:
+    sql = "SELECT * FROM refresh_blacklist WHERE token = ?;";
+    break;
+  default:
+    *err = (yueah_sql_err_t){.err_type = IncorrectBlacklist, 0};
+    return -1;
+  }
+
+  rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
+  if (rc != SQLITE_OK) {
+    yueah_log_error("Failed to prepare statement: %d:%s", sqlite3_errcode(conn),
+                    sqlite3_errmsg(conn));
+    *err = (yueah_sql_err_t){.err_type = StmtPrepare, 0};
+    return -1;
+  }
+
+  if (sqlite3_column_count(stmt) != 2) {
+    yueah_log_error("Failed to get blacklist: wrong number of columns");
+    yueah_log_error("SQL: %s", sql);
+    yueah_log_error("SQLITE_COLUMN_COUNT: %d", sqlite3_column_count(stmt));
+    *err = (yueah_sql_err_t){IncompleteTable, 0};
+    sqlite3_finalize(stmt);
+    return -1;
+  }
+
+  sqlite3_bind_text(stmt, 1, token, -1, SQLITE_STATIC);
+
+  if ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+    // token already exists, this shouldn't happen
+    fn_rc = -1;
+    rc = sqlite3_step(stmt);
+  }
+
+  if (rc != SQLITE_DONE) {
+    yueah_log_error("Failed to get blacklist: %d:%s", sqlite3_errcode(conn),
+                    sqlite3_errmsg(conn));
+    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
+    sqlite3_finalize(stmt);
+    return -1;
+  }
+
+  sqlite3_finalize(stmt);
+  return 0;
+}
+static int insert_blacklist(sqlite3 *conn, char *token,
+                            yueah_blacklist_type_t blacklist,
+                            yueah_sql_err_t *err) {
+  int rc = 0;
+  sqlite3_stmt *stmt;
+
+  const char *sql;
+  switch (blacklist) {
+  case AccessBlacklist:
+    sql = "INSERT INTO access_blacklist (token) VALUES (?);";
+    break;
+  case RefreshBlacklist:
+    sql = "INSERT INTO refresh_blacklist (token) VALUES (?);";
+    break;
+  default:
+    return -1;
+  }
+
+  rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
+  if (rc != SQLITE_OK) {
+    yueah_log_error("Failed to prepare statement: %d:%s", sqlite3_errcode(conn),
+                    sqlite3_errmsg(conn));
+    *err = (yueah_sql_err_t){.err_type = StmtPrepare, 0};
+    return -1;
+  }
+
+  if (sqlite3_column_count(stmt) != 2) {
+    yueah_log_error("Failed to add to blacklist: wrong number of columns");
+    yueah_log_error("SQL: %s", sql);
+    yueah_log_error("SQLITE_COLUMN_COUNT: %d", sqlite3_column_count(stmt));
+    sqlite3_finalize(stmt);
+    return -1;
+  }
+
+  sqlite3_bind_text(stmt, 1, token, -1, SQLITE_STATIC);
+  rc = sqlite3_step(stmt);
+  if (rc != SQLITE_DONE) {
+    yueah_log_error("Failed to add to blacklist: %d:%s", sqlite3_errcode(conn),
+                    sqlite3_errmsg(conn));
+    sqlite3_finalize(stmt);
+    return -1;
+  }
+
+  sqlite3_finalize(stmt);
+  return 0;
+}
+
 int post_register_form(h2o_handler_t *handler, h2o_req_t *req) {
-  if (!h2o_memis(req->method.base, req->method.len, H2O_STRLIT("POST")))
-    return generic_response(req, 405, "Method not allowed");
-
-  int header_index = h2o_find_header(&req->headers, H2O_TOKEN_CONTENT_TYPE, -1);
-  if (header_index == -1) {
-    yueah_log_error("Failed to find header for Content-Type");
-    return generic_response(req, 400, "Failed to find header for Content-Type");
-  }
-
-  if (!h2o_memis(req->headers.entries[header_index].value.base,
-                 req->headers.entries[header_index].value.len,
-                 H2O_STRLIT("application/x-www-form-urlencoded"))) {
-    yueah_log_error("Content-Type is not application/x-www-form-urlencoded");
-    return generic_response(
-        req, 400, "Content-Type is not application/x-www-form-urlencoded");
-  }
+  yueah_verify_err_t verify_err = verify_headers(
+      req, H2O_STRLIT("POST"), H2O_STRLIT("application/x-www-form-urlencoded"));
+  if (verify_err != Success)
+    switch (verify_err) {
+    case MethodNotAllowed:
+      return generic_response(req, 405, "Method not allowed");
+    case FailedToFindContentType:
+      return generic_response(req, 400,
+                              "Failed to find header for Content-Type");
+    case WrongContentType:
+      return generic_response(
+          req, 400, "Content-Type is not application/x-www-form-urlencoded");
+    default:
+      return generic_response(req, 500, "Unknown error");
+    }
 
   yueah_handler_t *yueah_handler = (yueah_handler_t *)handler;
   yueah_state_t *yueah_state = yueah_handler->state;
@@ -299,22 +434,21 @@ int post_register_form(h2o_handler_t *handler, h2o_req_t *req) {
 }
 
 int post_login_form(h2o_handler_t *handler, h2o_req_t *req) {
-  if (!h2o_memis(req->method.base, req->method.len, H2O_STRLIT("POST")))
-    return generic_response(req, 405, "Method not allowed");
-
-  int header_index = h2o_find_header(&req->headers, H2O_TOKEN_CONTENT_TYPE, -1);
-  if (header_index == -1) {
-    yueah_log_error("Failed to find header for Content-Type");
-    return generic_response(req, 400, "Failed to find header for Content-Type");
-  }
-
-  if (!h2o_memis(req->headers.entries[header_index].value.base,
-                 req->headers.entries[header_index].value.len,
-                 H2O_STRLIT("application/x-www-form-urlencoded"))) {
-    yueah_log_error("Content-Type is not application/x-www-form-urlencoded");
-    return generic_response(
-        req, 400, "Content-Type is not application/x-www-form-urlencoded");
-  }
+  yueah_verify_err_t verify_err = verify_headers(
+      req, H2O_STRLIT("POST"), H2O_STRLIT("application/x-www-form-urlencoded"));
+  if (verify_err != Success)
+    switch (verify_err) {
+    case MethodNotAllowed:
+      return generic_response(req, 405, "Method not allowed");
+    case FailedToFindContentType:
+      return generic_response(req, 400,
+                              "Failed to find header for Content-Type");
+    case WrongContentType:
+      return generic_response(
+          req, 400, "Content-Type is not application/x-www-form-urlencoded");
+    default:
+      return generic_response(req, 500, "Unknown error");
+    }
 
   char *form_body = yueah_iovec_to_str(&req->pool, &req->entity);
   char **body = parse_post_body(&req->pool, form_body, req->entity.len);
@@ -396,12 +530,14 @@ int post_login_form(h2o_handler_t *handler, h2o_req_t *req) {
 
   char **session_cookie_content = h2o_mem_alloc_pool(&req->pool, char *, 2);
   session_cookie_content[0] =
-      yueah_strdup(&req->pool, session_token, session_token_len);
+      h2o_mem_alloc_pool(&req->pool, char, session_token_len);
+  memcpy(session_cookie_content[0], session_token, session_token_len);
   session_cookie_content[1] = NULL;
 
   char **refresh_cookie_content = h2o_mem_alloc_pool(&req->pool, char *, 2);
   refresh_cookie_content[0] =
-      yueah_strdup(&req->pool, refresh_token, refresh_token_len);
+      h2o_mem_alloc_pool(&req->pool, char, refresh_token_len);
+  memcpy(refresh_cookie_content[0], refresh_token, refresh_token_len);
   refresh_cookie_content[1] = NULL;
 
   char *session_cookie =
@@ -419,4 +555,44 @@ int post_login_form(h2o_handler_t *handler, h2o_req_t *req) {
                  "Set-Cookie", refresh_cookie, strlen(refresh_cookie));
 
   return generic_response(req, 200, "Login successful");
+}
+
+int get_refresh(h2o_handler_t *handler, h2o_req_t *req) {
+  yueah_verify_err_t verify_err =
+      verify_headers(req, H2O_STRLIT("GET"), NULL, 0);
+  if (verify_err != Success)
+    switch (verify_err) {
+    case MethodNotAllowed:
+      return generic_response(req, 405, "Method not allowed");
+    default:
+      return generic_response(req, 500, "Unknown error");
+    }
+
+  yueah_handler_t *yueah_handler = (yueah_handler_t *)handler;
+  yueah_state_t *yueah_state = yueah_handler->state;
+
+  int cursor = 0;
+  int first_cookie_index =
+      h2o_find_header(&req->headers, H2O_TOKEN_COOKIE, cursor);
+
+  h2o_iovec_t first_cookie_header =
+      req->headers.entries[first_cookie_index].value;
+
+  char *first_cookie_content =
+      yueah_iovec_to_str(&req->pool, &first_cookie_header);
+
+  mem_t out_len = 0;
+  unsigned char *first_cookie_content_decrypted = yueah_get_cookie_content(
+      &req->pool, (unsigned char *)first_cookie_content, "yueah_refresh",
+      &out_len);
+
+  yueah_log_debug("first_cookie_content: %s", first_cookie_content_decrypted);
+  yueah_log_debug("out_len: %d", out_len);
+
+  if (yueah_jwt_verify(&req->pool, (char *)first_cookie_content_decrypted,
+                       out_len, "blog", Refresh) == false) {
+    yueah_log_error("Failed to verify token");
+  }
+
+  return generic_response(req, 200, "Refresh successful");
 }

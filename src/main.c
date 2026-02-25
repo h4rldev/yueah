@@ -225,6 +225,12 @@ int main(int argc, char **argv) {
   if (log2file)
     h2o_access_log_register(pathconf, log2file);
 
+  pathconf = register_handler(hostconf, "/auth/refresh", get_refresh);
+  if (logfh)
+    h2o_access_log_register(pathconf, logfh);
+  if (log2file)
+    h2o_access_log_register(pathconf, log2file);
+
   if (!yueah_config->compression->enabled)
     goto NotCompress;
 
@@ -257,15 +263,6 @@ NotCompress:
               strerror(errno));
     goto Error;
   }
-
-  /*char **content = h2o_mem_alloc_pool(&pool, char *, 3);
-  content[0] = "yueah";
-  content[1] = "yueah";
-  content[2] = NULL;
-
-  char *cookie = yueah_set_cookie_new(&pool, "test", content, 0);
-  yueah_get_cookie(&pool, cookie, "test", 0);
-*/
 
   int matches = load_dotenv(".env");
   if (matches < 0)

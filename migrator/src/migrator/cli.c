@@ -59,10 +59,12 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
                             &option_index)) != -1) {
     switch (arg) {
     case 'v':
+      db_args->version = true;
       print_version();
       goto Ok;
 
     case 'h':
+      db_args->help = true;
       print_usage();
       goto Ok;
 
@@ -76,37 +78,34 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
       break;
 
     case 'n':
-      if (!optarg) {
-        migrator_log(Error, false, "(--new/-n) requires a migration name");
-        print_usage();
-        goto Error;
-      }
-
-      making_new_migration = true;
+      db_args->create_migration = true;
       strlcpy(temp_migration_name, optarg, 1024);
-      migrator_log(Info, false, "Making new migration: %s",
-                   temp_migration_name);
       break;
 
     case 'm':
-      if (!optarg) {
-        migrator_log(Error, false, "(--migrations/-m) requires a path");
-        print_usage();
-        goto Error;
-      }
-
+      db_args->migrations_path_added = true;
       strlcpy(temp_migrations_path, optarg, 1024);
       break;
 
     case 'd':
-      if (!optarg) {
-        migrator_log(Error, false, "(--db/-d) requires a path");
-        print_usage();
-        goto Error;
-      }
-
+      db_args->db_path_added = true;
       strlcpy(temp_db_path, optarg, 1024);
       break;
+
+    case ':':
+      switch (optopt) {
+      case 'n':
+        migrator_log(Error, false, "(--new/-n) requires a migration name");
+        break;
+      case 'm':
+        migrator_log(Error, false, "(--migrations/-m) requires a path");
+        break;
+      case 'd':
+        migrator_log(Error, false, "(--db/-d) requires a path");
+        break;
+      }
+      print_usage();
+      goto Error;
 
     case '?':
       migrator_log(Error, false, "Unknown option: %c\n", optopt);
@@ -120,8 +119,9 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
     }
   }
 
-  if ((strlen(temp_db_path) == 0 || strlen(temp_migrations_path) == 0) &&
-      optind != argc - 2 && making_new_migration == false) {
+  if ((db_args->db_path_added == false ||
+       db_args->migrations_path_added == 0) &&
+      optind != argc - 2 && db_args->create_migration == false) {
     migrator_log(Debug, false, "temp_db_path: %s\n",
                  !temp_db_path[0] ? "empty" : "full");
     migrator_log(Debug, false, "temp_migrations_path: %s\n",
@@ -136,7 +136,7 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
     goto Error;
   }
 
-  if (strlen(temp_migrations_path) != 0) {
+  if (db_args->migrations_path_added) {
     migrator_log(Debug, false, "temp_migrations_path is not empty");
     if (!is_path(temp_migrations_path)) {
       migrator_log(Error, false, "migrations_path is not a path\n");
@@ -146,17 +146,17 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
 
     db_args->migrations_path = arena_strdup(arena, temp_migrations_path, 1024);
   } else if (strlen(argv[optind]) != 0) {
-
     if (!is_path(argv[optind])) {
       migrator_log(Error, false, "migrations_path is not a path\n");
       print_usage();
       goto Error;
     }
 
+    db_args->migrations_path_added = true;
     db_args->migrations_path = arena_strdup(arena, argv[optind], 1024);
   }
 
-  if (strlen(temp_db_path) != 0) {
+  if (db_args->db_path_added) {
     if (!is_path(temp_db_path) && db_args->create_db == false) {
       migrator_log(Error, false, "db_path is not a path\n");
       print_usage();
@@ -172,12 +172,15 @@ db_args_t *parse_args(mem_arena *arena, int argc, char **argv) {
       goto Error;
     }
 
+    db_args->db_path_added = true;
     db_args->db_path = arena_strdup(arena, argv[optind + 1], 1024);
     migrator_log(Debug, false, "db_path2: %s", db_args->db_path);
   }
 
-  if (temp_migration_name[0] && temp_migrations_path[0])
+  if (db_args->create_migration && db_args->migrations_path_added) {
+    migrator_log(Debug, false, "copying temp migration name");
     db_args->migration_name = arena_strdup(arena, temp_migration_name, 1024);
+  }
 
 Ok:
   db_args->return_status = 0;
