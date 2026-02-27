@@ -475,3 +475,125 @@ bool yueah_jwt_verify(h2o_mem_pool_t *pool, const char *token, mem_t token_len,
 
   return true;
 }
+
+char *yueah_jwt_get_sub(h2o_mem_pool_t *pool, const char *token,
+                        mem_t token_len) {
+  time_t now_local = time(NULL);
+  struct tm *time_buf = localtime(&now_local);
+  time_t now = timegm(time_buf);
+
+  yyjson_read_err err;
+
+  yyjson_doc *doc = NULL;
+  yyjson_val *root = NULL;
+
+  yyjson_val *iss_val = NULL;
+  yyjson_val *sub_val = NULL;
+  yyjson_val *aud_val = NULL;
+  yyjson_val *iat_val = NULL;
+  yyjson_val *exp_val = NULL;
+  yyjson_val *jti_val = NULL;
+  yyjson_val *nbf_val = NULL;
+
+  mem_t header_len = 0;
+  mem_t payload_len = 0;
+
+  char header[1024] = {0};
+  char payload[2048] = {0};
+  unsigned char *payload_json = NULL;
+  mem_t payload_json_len = 0;
+  char signature[1024] = {0};
+
+  header_len = strchr(token, '.') - token;
+  payload_len = strchr(token + header_len + 1, '.') - token - header_len - 1;
+
+  sscanf(token, "%[^.].%[^.].%s", header, payload, signature);
+
+  payload_json =
+      yueah_base64_decode(pool, payload, payload_len, 2048, &payload_json_len);
+  if (!payload_json || payload_json_len < 10) {
+    yueah_log_error("Failed to decode payload");
+    return NULL;
+  }
+
+  doc = yyjson_read_opts((char *)payload_json, payload_json_len,
+                         YYJSON_READ_NOFLAG, NULL, &err);
+  if (!doc) {
+    yueah_log_error("Error parsing json: %d:%s", err.code, err.msg);
+    return NULL;
+  }
+
+  root = yyjson_doc_get_root(doc);
+
+  iss_val = yyjson_obj_get(root, "iss");
+  sub_val = yyjson_obj_get(root, "sub");
+  aud_val = yyjson_obj_get(root, "aud");
+  iat_val = yyjson_obj_get(root, "iat");
+  exp_val = yyjson_obj_get(root, "exp");
+  jti_val = yyjson_obj_get(root, "jti");
+  nbf_val = yyjson_obj_get(root, "nbf");
+
+  if (!iss_val || !yyjson_is_str(iss_val)) {
+    yueah_log_error("Failed to get iss");
+    return NULL;
+  }
+
+  if (!sub_val || !yyjson_is_str(sub_val)) {
+    yueah_log_error("Failed to get sub");
+    return NULL;
+  }
+
+  if (!aud_val || !yyjson_is_str(aud_val)) {
+    yueah_log_error("Failed to get aud");
+    return NULL;
+  }
+
+  if (!iat_val || !yyjson_is_uint(iat_val)) {
+    yueah_log_error("Failed to get iat");
+    return NULL;
+  }
+
+  if (!exp_val || !yyjson_is_uint(exp_val)) {
+    yueah_log_error("Failed to get exp");
+    return NULL;
+  }
+
+  if (!jti_val || !yyjson_is_str(jti_val)) {
+    yueah_log_error("Failed to get jti");
+    return NULL;
+  }
+
+  if (!nbf_val || !yyjson_is_uint(nbf_val)) {
+    yueah_log_error("Failed to get nbf");
+    return NULL;
+  }
+
+  if (strcasecmp(yyjson_get_str(iss_val), "yueah") != 0) {
+    yueah_log_error("Invalid iss");
+    return NULL;
+  }
+
+  if (strcasecmp(yyjson_get_str(aud_val), "blog") != 0) {
+    yueah_log_error("Invalid aud");
+    return NULL;
+  }
+
+  if ((long)yyjson_get_uint(exp_val) < now) {
+    yueah_log_error("Token expired");
+    return NULL;
+  }
+
+  if ((long)yyjson_get_uint(nbf_val) > now) {
+    yueah_log_error("Token not valid yet");
+    return NULL;
+  }
+
+  mem_t sub_val_len = strlen(yyjson_get_str(sub_val));
+  char *sub = yueah_strdup(pool, yyjson_get_str(sub_val), sub_val_len + 1);
+  if (sub == NULL || sub_val_len < 10) {
+    yueah_log_error("Failed to get sub");
+    return NULL;
+  }
+
+  return sub;
+}

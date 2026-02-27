@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include <yueah/shared.h>
+
 typedef enum { LOG_TO_FD, LOG_TO_PATH } yueah_log_type_t;
 typedef struct {
   yueah_log_type_t type;
@@ -39,6 +41,8 @@ int __register_logger_fd(FILE *fd);
 int __register_logger_path(char *path);
 
 void yueah_log(log_level_t level, bool time, const char *fmt, ...);
+void yueah_log_bytes(log_level_t level, bool time, mem_t bytes, const char *fmt,
+                     ...);
 
 #define register_logger(target)                                                \
   _Generic((target),                                                           \
@@ -49,10 +53,29 @@ void yueah_log(log_level_t level, bool time, const char *fmt, ...);
 #define yueah_log_warning(fmt, ...) yueah_log(Warning, true, fmt, ##__VA_ARGS__)
 #define yueah_log_info(fmt, ...) yueah_log(Info, true, fmt, ##__VA_ARGS__)
 #define yueah_log_debug(fmt, ...) yueah_log(Debug, true, fmt, ##__VA_ARGS__)
+
 #define yueah_log_error_tl(fmt, ...) yueah_log(Error, false, fmt, ##__VA_ARGS__)
 #define yueah_log_warning_tl(fmt, ...)                                         \
   yueah_log(Warning, false, fmt, ##__VA_ARGS__)
 #define yueah_log_info_tl(fmt, ...) yueah_log(Info, false, fmt, ##__VA_ARGS__)
 #define yueah_log_debug_tl(fmt, ...) yueah_log(Debug, false, fmt, ##__VA_ARGS__)
+
+#define yueah_log_error_bytes(bytes, fmt, ...)                                 \
+  yueah_log_bytes(Error, true, bytes, fmt, ##__VA_ARGS__)
+#define yueah_log_warning_bytes(bytes, fmt, ...)                               \
+  yueah_log_bytes(Warning, true, bytes, fmt, ##__VA_ARGS__)
+#define yueah_log_info_bytes(bytes, fmt, ...)                                  \
+  yueah_log_bytes(Info, true, bytes, fmt, ##__VA_ARGS__)
+#define yueah_log_debug_bytes(bytes, fmt, ...)                                 \
+  yueah_log_bytes(Debug, true, bytes, fmt, ##__VA_ARGS__)
+
+#define yueah_log_error_bytes_tl(bytes, fmt, ...)                              \
+  yueah_log_bytes(Error, false, bytes, fmt, ##__VA_ARGS__)
+#define yueah_log_warning_bytes_tl(bytes, fmt, ...)                            \
+  yueah_log_bytes(Warning, false, bytes, fmt, ##__VA_ARGS__)
+#define yueah_log_info_bytes_tl(bytes, fmt, ...)                               \
+  yueah_log_bytes(Info, false, bytes, fmt, ##__VA_ARGS__)
+#define yueah_log_debug_bytes_tl(bytes, fmt, ...)                              \
+  yueah_log_bytes(Debug, false, bytes, fmt, ##__VA_ARGS__)
 
 #endif // !YUEAH_LOG_H

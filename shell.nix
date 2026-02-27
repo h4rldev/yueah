@@ -27,5 +27,6 @@ with pkgs;
       valgrind
       just
       gf
+      h2o
     ];
   }

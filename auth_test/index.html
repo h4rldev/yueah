@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Register & Login Testing</title>
+    <script type="text/javascript">
+    const override_forms = () => {
+      const register_form = document.getElementById("register");
+      const login_form = document.getElementById("login");
+
+      register_form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const form_data = new FormData(register_form);
+        const payload = new URLSearchParams(form_data).toString();
+
+        try {
+          const response = await fetch("http://localhost:8080/auth/register", {
+            method: "POST",
+            headers: {
+              'Content-Type': "application/x-www-form-urlencoded",
+            },
+            body: payload,
+            credentials: "include",
+          });
+
+          const status = response.status;
+          const data = await response.json();
+          console.log(data);
+          console.log(status);
+        } catch (error) {
+          console.error(error);
+        }
+      });
+
+      login_form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const form_data = new FormData(login_form);
+        const payload = new URLSearchParams(form_data).toString();
+
+        try {
+          const response = await fetch("http://localhost:8080/auth/login", {
+            method: "POST",
+            headers: {
+              'Content-Type': "application/x-www-form-urlencoded",
+            },
+            credentials: "include",
+            body: payload,
+          });
+
+          const status = response.status;
+          const data = await response.json();
+          console.log(data);
+          console.log(status);
+        } catch (error) {
+          console.error(error);
+        }
+      });
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      override_forms();
+    });
+    </script>
+
+  </head>
+  <body>
+   <form id="register">
+    <div>
+      <h1>Register</h1>
+    </div>
+    <div>
+      <label for="username">Username</label>
+      <input type="username" name="username" id="username" placeholder="Username" autocomplete="username">
+    </div>
+    <div>
+      <label for="password">Password</label>
+      <input type="password" name="password" id="password" placeholder="Password" autocomplete="new-password">
+    </div>
+    <div>
+      <button>Register</button>
+    </div>
+   </form>
+  <form id="login" style="margin-top: 10px;">
+    <div>
+      <h1>Login</h1>
+    </div>
+    <div>
+      <label for="username">Username</label>
+      <input type="username" name="username" id="username" placeholder="Username" autocomplete="username">
+    </div>
+    <div>
+      <label for="password">Password</label>
+      <input type="password" name="password" id="password" placeholder="Password" autocomplete="current-password">
+    </div>
+    <div>
+      <button>Login</button>
+    </div>
+   </form>
+  </body>
+</html>
+

@@ -15,19 +15,6 @@
 
 #define YUEAH_COOKIE_CIPHER_LEN (4096 + crypto_secretbox_MACBYTES)
 
-static char *collect_contents(char **contents) {
-  static char collection[4096] = {0};
-  char intermediate[4096] = {0};
-
-  while (*contents) {
-    snprintf(intermediate, 4096, "%s; ", *contents);
-    strlcat(collection, intermediate, 4096);
-    contents++;
-  }
-
-  return collection;
-}
-
 static int generate_yueah_key(void) {
   FILE *key_file;
   unsigned char key[crypto_secretbox_KEYBYTES];
@@ -228,10 +215,12 @@ static char *unix_time_to_date_header(uint64_t unix_time) {
   return date;
 }
 
-char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
-                       char **contents, yueah_cookie_mask mask, ...) {
+unsigned char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
+                                const char *content, mem_t *out_len,
+                                yueah_cookie_mask mask, ...) {
   mem_t header_size = 4096 + 32;
-  char *cookie_header = h2o_mem_alloc_pool(pool, char *, header_size);
+  unsigned char *cookie_header =
+      h2o_mem_alloc_pool(pool, unsigned char *, header_size);
 
   yueah_same_site_t same_site = -1;
   mem_t max_age = 0;
@@ -277,74 +266,105 @@ char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
     domain = va_arg(va, char *);
 
   // This expects the content array ends with NULL
-  char *cookie_contents = collect_contents(contents);
 
   mem_t encrypted_out_len = 0;
-  mem_t base64_encode_out_len = 0;
+  mem_t cookie_contents_encoded_len = 0;
 
-  unsigned char *cookie_contents_encrypted =
-      yueah_cookie_encrypt(pool, (unsigned char *)cookie_contents,
-                           strlen(cookie_contents), &encrypted_out_len);
+  unsigned char *cookie_contents = (unsigned char *)content;
+
+  unsigned char *cookie_contents_encrypted = yueah_cookie_encrypt(
+      pool, cookie_contents, strlen((const char *)cookie_contents),
+      &encrypted_out_len);
   char *cookie_contents_encoded =
       yueah_base64_encode(pool, cookie_contents_encrypted, encrypted_out_len,
-                          &base64_encode_out_len);
+                          &cookie_contents_encoded_len);
 
-  snprintf(cookie_header, header_size, "%s=%s;", cookie_name,
-           cookie_contents_encoded);
+  memcpy(cookie_header, cookie_name, strlen(cookie_name));
+  memcpy(cookie_header + strlen(cookie_name), "=", 1);
+  memcpy(cookie_header + strlen(cookie_name) + 1, cookie_contents_encoded,
+         cookie_contents_encoded_len);
+  memcpy(cookie_header + strlen(cookie_name) + 1 + cookie_contents_encoded_len,
+         ";", 1);
+
+  mem_t cookie_header_offset =
+      strlen(cookie_name) + 1 + cookie_contents_encoded_len + 1;
 
   if (same_site > -1) {
-    strlcat(cookie_header, " SameSite=", header_size);
+    memcpy(cookie_header + cookie_header_offset, " SameSite=", 10);
+    cookie_header_offset += 10;
     switch (same_site) {
     case LAX:
-      strlcat(cookie_header, "Lax;", header_size);
+      memcpy(cookie_header + cookie_header_offset, "Lax;", 4);
+      cookie_header_offset += 4;
       break;
     case STRICT:
-      strlcat(cookie_header, "Strict;", header_size);
+      memcpy(cookie_header + cookie_header_offset, "Strict;", 7);
+      cookie_header_offset += 7;
       break;
     case NONE:
-      strlcat(cookie_header, "None;", header_size);
+      memcpy(cookie_header + cookie_header_offset, "None;", 5);
+      cookie_header_offset += 5;
       break;
 
     default:
-      strlcat(cookie_header, "Lax;", header_size);
+      memcpy(cookie_header + cookie_header_offset, "Lax;", 4);
+      cookie_header_offset += 4;
       break;
     }
   }
 
-  if (secure)
-    strlcat(cookie_header, " Secure;", header_size);
+  if (secure) {
+    memcpy(cookie_header + cookie_header_offset, " Secure;", 8);
+    cookie_header_offset += 8;
+  }
 
-  if (http_only)
-    strlcat(cookie_header, " HttpOnly;", header_size);
+  if (http_only) {
+    memcpy(cookie_header + cookie_header_offset, " HttpOnly;", 10);
+    cookie_header_offset += 10;
+  }
 
   if (expires) {
-
-    strlcat(cookie_header, " Expires=", header_size);
-    strlcat(cookie_header, expires, header_size);
-    strlcat(cookie_header, ";", header_size);
+    memcpy(cookie_header + cookie_header_offset, " Expires=", 9);
+    cookie_header_offset += 9;
+    memcpy(cookie_header + cookie_header_offset, expires, strlen(expires));
+    cookie_header_offset += strlen(expires);
+    memcpy(cookie_header + cookie_header_offset, ";", 1);
+    cookie_header_offset += 1;
   }
 
   if (max_age > 0) {
     char fmt_buf[64];
     snprintf(fmt_buf, 64, "%lu", max_age);
-    strlcat(cookie_header, " Max-Age=", header_size);
-    strlcat(cookie_header, fmt_buf, header_size);
-    strlcat(cookie_header, ";", header_size);
+    memcpy(cookie_header + cookie_header_offset, " Max-Age=", 9);
+    cookie_header_offset += 9;
+    memcpy(cookie_header + cookie_header_offset, fmt_buf, strlen(fmt_buf));
+    cookie_header_offset += strlen(fmt_buf);
+    memcpy(cookie_header + cookie_header_offset, ";", 1);
+    cookie_header_offset += 1;
   }
 
   if (domain) {
-    strlcat(cookie_header, " Domain=", header_size);
-    strlcat(cookie_header, domain, header_size);
-    strlcat(cookie_header, ";", header_size);
+    memcpy(cookie_header + cookie_header_offset, " Domain=", 8);
+    cookie_header_offset += 8;
+    memcpy(cookie_header + cookie_header_offset, domain, strlen(domain));
+    cookie_header_offset += strlen(domain);
+    memcpy(cookie_header + cookie_header_offset, ";", 1);
+    cookie_header_offset += 1;
   }
 
   if (path) {
-    strlcat(cookie_header, " Path=", header_size);
-    strlcat(cookie_header, path, header_size);
-    strlcat(cookie_header, ";", header_size);
+    memcpy(cookie_header + cookie_header_offset, " Path=", 7);
+    cookie_header_offset += 7;
+    memcpy(cookie_header + cookie_header_offset, path, strlen(path));
+    cookie_header_offset += strlen(path);
+    memcpy(cookie_header + cookie_header_offset, ";", 1);
+    cookie_header_offset += 1;
   }
 
   va_end(va);
+  memset(cookie_header + cookie_header_offset, 0, 1);
+
+  *out_len = strlen((const char *)cookie_header);
   return cookie_header;
 }
 
@@ -368,6 +388,20 @@ static char *parse_cookie(h2o_mem_pool_t *pool,
          strlen(res) - strlen(format) + 1);
 
   return cookie_content;
+}
+
+char *yueah_get_cookie_name(h2o_mem_pool_t *pool, h2o_iovec_t cookie_header) {
+  if (!cookie_header.base)
+    return NULL;
+
+  char *after_cookie_name = strstr(cookie_header.base, "=");
+  mem_t len = after_cookie_name - cookie_header.base;
+
+  char *cookie_name = h2o_mem_alloc_pool(pool, char *, len + 1);
+  memcpy(cookie_name, cookie_header.base, len);
+  cookie_name[len] = '\0';
+
+  return cookie_name;
 }
 
 unsigned char *yueah_get_cookie_content(h2o_mem_pool_t *pool,
@@ -398,7 +432,6 @@ unsigned char *yueah_get_cookie_content(h2o_mem_pool_t *pool,
 
   decrypted_len = (unsigned char *)end - decrypted_content;
   *out_len = decrypted_len;
-  print_hex_unsigned("content", decrypted_content, decrypted_len);
 
   return decrypted_content;
 }

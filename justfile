@@ -157,3 +157,19 @@ create-db:
 bear:
     bear -- just compile debug true
     sed -i 's|"/nix/store/[^"]*gcc[^"]*|\"gcc|g' compile_commands.json
+
+test-auth:
+    #!/usr/bin/env bash
+    TEMP=$(mktemp -d)
+
+    echo "hosts:
+      "dev":
+        listen:
+          port: 8008
+        paths:
+          "/":
+            file.dir: ./auth_test
+    http2-reprioritize-blocking-assets: ON
+    " > $TEMP/h2o.yml
+
+    helium http://localhost:8008 && h2o -c $TEMP/h2o.yml

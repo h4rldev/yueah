@@ -88,4 +88,7 @@ char *yueah_jwt_encode(h2o_mem_pool_t *pool, const yueah_jwt_claims_t *payload,
 bool yueah_jwt_verify(h2o_mem_pool_t *pool, const char *token, mem_t token_len,
                       const char *aud, yueah_jwt_key_type_t key_type);
 
+char *yueah_jwt_get_sub(h2o_mem_pool_t *pool, const char *token,
+                        mem_t token_len);
+
 #endif // !YUEAH_JWT_H

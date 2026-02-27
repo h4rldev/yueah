@@ -39,8 +39,11 @@ typedef int yueah_cookie_mask;
  *
  * Returns a yueah_cookie_t struct with the proper header.
  */
-char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
-                       char **contents, yueah_cookie_mask mask, ...);
+unsigned char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
+                                const char *content, mem_t *out_len,
+                                yueah_cookie_mask mask, ...);
+
+char *yueah_get_cookie_name(h2o_mem_pool_t *pool, h2o_iovec_t cookie_header);
 
 // will get one cookie content at a time, will work on the same header but with
 // different cookie names

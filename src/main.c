@@ -195,8 +195,27 @@ int main(int argc, char **argv) {
   h2o_config_init(&config);
   h2o_compress_register_configurator(&config);
 
+  yueah_cors_configs_t *cors =
+      h2o_mem_alloc_pool(&pool, yueah_cors_configs_t, 1);
+  cors->public = h2o_mem_alloc_pool(&pool, yueah_cors_config_t, 1);
+  cors->private = h2o_mem_alloc_pool(&pool, yueah_cors_config_t, 1);
+
+  cors->public->allow_origin = NULL; // TODO: set explicitly when production
+  cors->public->allow_methods = yueah_strdup(&pool, "GET, POST, OPTIONS", 19);
+  cors->public->allow_headers = yueah_strdup(&pool, "*", 2);
+  cors->public->expose_headers = yueah_strdup(&pool, "*", 2);
+  cors->public->allow_credentials = true;
+
+  cors->private->allow_origin = NULL; // TODO: set explicitly when production
+  cors->private->allow_methods =
+      yueah_strdup(&pool, "GET, POST, PUT, DELETE, OPTIONS", 32);
+  cors->private->allow_headers = yueah_strdup(&pool, "*", 2);
+  cors->private->expose_headers = yueah_strdup(&pool, "*", 2);
+  cors->private->allow_credentials = true;
+
   state = h2o_mem_alloc_pool(&pool, yueah_state_t, 1);
   state->db_path = yueah_config->db_path;
+  state->cors = cors;
 
   hostconf = h2o_config_register_host(
       &config, h2o_iovec_init(H2O_STRLIT("default")), 65535);

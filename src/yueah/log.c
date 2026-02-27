@@ -135,3 +135,97 @@ void yueah_log(log_level_t level, bool time, const char *fmt, ...) {
     fclose(log_file2);
   }
 }
+
+void yueah_log_bytes(log_level_t level, bool time, mem_t bytes, const char *fmt,
+                     ...) {
+#ifndef YUEAH_DEBUG
+  if (level == Debug)
+    return;
+#endif
+
+  va_list args;
+  char *time_str;
+  static char level_str[20] = {0};
+  char fmt_buf[1024] = {0};
+  char log_str[1024] = {0};
+
+  FILE *log_file1 = NULL;
+  FILE *log_file2 = NULL;
+
+  if (!state_console_target.fd && !state_console_target.path) {
+    fprintf(stderr, "No loggers registered\n");
+    return;
+  }
+
+  if (state_console_target.fd)
+    log_file1 = state_console_target.fd;
+
+  if (state_console_target.path)
+    log_file2 = fopen(state_console_target.path, "a");
+
+  switch (level) {
+  case Error:
+    snprintf(level_str, 20, "%s[ERROR]%s:", COLOR_RED, COLOR_RESET);
+    if (log_file1)
+      log_file1 = stderr;
+    break;
+  case Warning:
+    snprintf(level_str, 20, " %s[WARN]%s:", COLOR_YELLOW, COLOR_RESET);
+    break;
+  case Info:
+    snprintf(level_str, 20, " %s[INFO]%s:", COLOR_CYAN, COLOR_RESET);
+    break;
+  case Debug:
+    snprintf(level_str, 20, "%s[DEBUG]%s:", COLOR_BLUE, COLOR_RESET);
+    break;
+  }
+
+  if (time) {
+    time_str = get_time();
+    snprintf(fmt_buf, 1024, "[%s] - %s %s", time_str, level_str, fmt);
+  } else {
+    snprintf(fmt_buf, 1024, "%s %s", level_str, fmt);
+  }
+
+  if (log_file1) {
+    va_start(args, fmt);
+    vsnprintf(log_str, 1024, fmt_buf, args);
+    memset(log_str, 0, strlen(log_str) + bytes);
+    fprintf(log_file1, "%s\n", log_str);
+    va_end(args);
+  }
+
+  if (log_file2) {
+    switch (level) {
+    case Error:
+      strlcpy(level_str, "[ERROR]:", 20);
+      break;
+
+    case Warning:
+      strlcpy(level_str, " [WARN]:", 20);
+      break;
+
+    case Info:
+      strlcpy(level_str, " [INFO]:", 20);
+      break;
+
+    case Debug:
+      strlcpy(level_str, "[DEBUG]:", 20);
+      break;
+    }
+
+    if (time) {
+      time_str = get_time();
+      snprintf(fmt_buf, 1024, "[%s] - %s %s", time_str, level_str, fmt);
+    } else {
+      snprintf(fmt_buf, 1024, "%s %s", level_str, fmt);
+    }
+
+    va_start(args, fmt);
+    vsnprintf(log_str, 1024, fmt_buf, args);
+    memset(log_str, 0, strlen(log_str) + bytes);
+    fprintf(log_file2, "%s\n", log_str);
+    va_end(args);
+    fclose(log_file2);
+  }
+}
