@@ -40,15 +40,26 @@ typedef int yueah_cookie_mask;
  * Returns a yueah_cookie_t struct with the proper header.
  */
 unsigned char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
-                                const char *content, mem_t *out_len,
-                                yueah_cookie_mask mask, ...);
+                                const char *content, const mem_t content_len,
+                                mem_t *out_len, yueah_cookie_mask mask, ...);
 
-char *yueah_get_cookie_name(h2o_mem_pool_t *pool, h2o_iovec_t cookie_header);
+/*
+ * Check if cookie name exists in the cookie header
+ *
+ * [cookie_header] The header to check
+ *
+ * [cookie_name] The name of the cookie to check if exists
+ *
+ * Returns true if the cookie name exists, false otherwise
+ */
+bool yueah_cookie_name_exists(h2o_iovec_t cookie_header,
+                              const char *cookie_name);
 
 // will get one cookie content at a time, will work on the same header but with
 // different cookie names
 unsigned char *yueah_get_cookie_content(h2o_mem_pool_t *pool,
-                                        unsigned char *cookie_header,
-                                        char *cookie_name, mem_t *out_len);
+                                        const char *cookie_header,
+                                        const char *cookie_name,
+                                        mem_t *out_len);
 
 #endif // !YUEAH_COOKIE_H

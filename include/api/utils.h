@@ -58,6 +58,28 @@ char **parse_post_body(h2o_mem_pool_t *pool, const char *input,
                        mem_t input_len);
 
 /*
+ * Get the content of a cookie from a h2o request
+ *
+ *
+ * @param req The request to get the cookie from
+ *
+ * @param cookie_name The name of the cookie to get
+ *
+ *
+ * @return The content of the cookie or NULL if the cookie was not found
+ */
+h2o_iovec_t *get_cookie_content(h2o_req_t *req, const char *cookie_name);
+
+/*
+ * Deletes the cookie header
+ *
+ * @param req The request to delete the cookie from
+ *
+ * @return 0 on success, -1 on failure
+ */
+int yueah_delete_cookie(h2o_req_t *req);
+
+/*
  * Send a generic json response to a request
  *
  *

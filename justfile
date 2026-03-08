@@ -10,8 +10,8 @@ h2o_include := lib_dir + '/include'
 link_flags := '-lyyjson -lh2o -lssl -lcrypto -lz -luv -lm -lbrotlidec -lbrotlienc -lbsd -lsqlite3 -lsodium'
 debug_compile_flags := '-ggdb -fsanitize=address -Wall -Wextra -pedantic -Wno-unused-parameter -Wno-variadic-macros -DYUEAH_DEBUG'
 debug_link_flags := '-ggdb -fsanitize=address -static-libasan -ldotenv-debug'
-release_compile_flags := '-O2 -flto'
-release_link_flags := '-O2 -flto -ldotenv'
+release_compile_flags := '-O2'
+release_link_flags := '-O2 -ldotenv'
 color_reset := "\\033[0m"
 color_red := "\\033[31m"
 color_green := "\\033[32m"

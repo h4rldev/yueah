@@ -1,9 +1,11 @@
+#include "h2o/memory.h"
 #include <ctype.h>
 #include <string.h>
 
 #include <h2o.h>
 #include <yyjson.h>
 
+#include <yueah/cookie.h>
 #include <yueah/log.h>
 #include <yueah/shared.h>
 
@@ -307,6 +309,86 @@ char **parse_post_body(h2o_mem_pool_t *pool, const char *input,
 
   res[array_len - 1] = NULL;
   return res;
+}
+
+h2o_iovec_t *get_cookie_content(h2o_req_t *req, const char *cookie_name) {
+  if (!cookie_name)
+    return NULL;
+
+  char cookie_content_buf[4096];
+  size_t cookie_content_len = 0;
+
+  int cookie_cursor = -1;
+  int wanted_cookie_index = 0;
+  do {
+    int cookie_index =
+        h2o_find_header(&req->headers, H2O_TOKEN_COOKIE, cookie_cursor);
+    if (cookie_index == -1) {
+      yueah_log_debug("Didn't find cookie with the name %s", cookie_name);
+      return NULL;
+    }
+
+    h2o_header_t cookie_header = req->headers.entries[cookie_index];
+    if (yueah_cookie_name_exists(cookie_header.value, cookie_name)) {
+      yueah_log_debug("Found cookie with the name %s at index %d, cursor %d",
+                      cookie_name, cookie_index, cookie_cursor);
+      wanted_cookie_index = cookie_index;
+    } else
+      cookie_cursor++;
+
+  } while (wanted_cookie_index == 0);
+
+  h2o_header_t cookie_header = req->headers.entries[wanted_cookie_index];
+  h2o_iovec_t *cookie_values = h2o_mem_alloc_pool(&req->pool, h2o_iovec_t, 1);
+
+  char needle[1024];
+  snprintf(needle, 1024, "%s=", cookie_name);
+
+  size_t cookie_name_offset =
+      h2o_strstr(cookie_header.value.base, cookie_header.value.len, needle,
+                 strlen(needle));
+
+  if (cookie_name_offset == SIZE_MAX) {
+    yueah_log_error(
+        "Failed to find cookie name in header despite being found previously");
+    return NULL;
+  }
+
+  memcpy(cookie_content_buf, cookie_header.value.base + cookie_name_offset,
+         cookie_header.value.len - cookie_name_offset);
+  cookie_content_len = cookie_header.value.len - cookie_name_offset;
+
+  size_t semi_colon_offset = 2;
+  size_t semi_colon_end_offset =
+      h2o_strstr(cookie_content_buf, cookie_content_len, ";", 1);
+  if (semi_colon_end_offset == SIZE_MAX) {
+    semi_colon_end_offset = 0;
+    semi_colon_offset = 0;
+  }
+
+  cookie_content_len =
+      cookie_content_len - semi_colon_end_offset - semi_colon_offset;
+
+  cookie_values->base =
+      h2o_mem_alloc_pool(&req->pool, char, cookie_content_len);
+  cookie_values->len = cookie_content_len;
+
+  memcpy(cookie_values->base, cookie_content_buf, cookie_content_len);
+  return cookie_values;
+}
+
+int yueah_delete_cookie(h2o_req_t *req) {
+  int cookie_index = h2o_find_header(&req->headers, H2O_TOKEN_COOKIE, -1);
+  if (cookie_index == -1) {
+    yueah_log_debug("Didn't find cookie");
+    return -1;
+  }
+
+  int new = h2o_delete_header(&req->headers, cookie_index);
+  if (new == -1)
+    return -1;
+
+  return 0;
 }
 
 int generic_response(h2o_req_t *req, int status, const char *message) {
