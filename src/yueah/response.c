@@ -1,17 +1,13 @@
-#include "h2o/memory.h"
-#include <ctype.h>
-#include <string.h>
-
 #include <h2o.h>
 #include <yyjson.h>
 
-#include <yueah/cookie.h>
 #include <yueah/log.h>
-#include <yueah/shared.h>
+#include <yueah/response.h>
+#include <yueah/string.h>
+#include <yueah/types.h>
+#include <yueah/url.h>
 
-#include <api/utils.h>
-
-char *get_res_reason(int status) {
+static char *get_res_reason(int status) {
   static char reason[1024] = {0};
 
   switch (status) {
@@ -177,9 +173,10 @@ char *get_res_reason(int status) {
   return reason;
 }
 
-static char *error_resp_to_json(h2o_mem_pool_t *pool, yyjson_mut_doc *doc,
-                                yyjson_mut_val *root,
-                                error_response_t *error_response) {
+static yueah_string_t *
+error_resp_to_json(h2o_mem_pool_t *pool, yyjson_mut_doc *doc,
+                   yyjson_mut_val *root,
+                   yueah_error_response_t *error_response) {
   yyjson_write_err err;
   char *json;
 
@@ -194,7 +191,7 @@ static char *error_resp_to_json(h2o_mem_pool_t *pool, yyjson_mut_doc *doc,
 
   yyjson_mut_doc_set_root(doc, root);
 
-  mem_t out_len = 0;
+  u64 out_len = 0;
   yyjson_mut_write_opts(doc, YYJSON_WRITE_NOFLAG, NULL, &out_len, &err);
 
   json = h2o_mem_alloc_pool(pool, char *, out_len);
@@ -204,197 +201,72 @@ static char *error_resp_to_json(h2o_mem_pool_t *pool, yyjson_mut_doc *doc,
     return NULL;
   }
 
-  return json;
+  return yueah_string_new(pool, json, out_len);
 }
 
-char *get_form_val(h2o_mem_pool_t *pool, const char *key, char **input) {
-  char *output = NULL;
-
-  if (!key || !input)
-    return NULL;
-
-  mem_t key_idx = 0;
-  mem_t key_len = 0;
-
-  for (mem_t i = 0; input[i] != NULL; i++) {
-    key_len = strlen(key);
-    if (strncmp(input[i], key, key_len) != 0)
-      continue;
-
-    key_idx = i;
-  }
-
-  char *val = input[key_idx] + key_len + 1;
-  mem_t val_len = strlen(val) + 1;
-  output = h2o_mem_alloc_pool(pool, char, val_len);
-  memcpy(output, val, val_len);
-
-  return output;
-}
-
-void urldecode(char *dst, const char *src) {
-  char a, b;
-  while (*src) {
-    if (*src == '%' && ((a = src[1]) && (b = src[2])) && isxdigit(a) &&
-        isxdigit(b)) {
-      if (a >= 'a')
-        a -= 'a' - 'A';
-      if (a >= 'A')
-        a -= ('A' - 10);
-      else
-        a -= '0';
-
-      if (b >= 'a')
-        b -= 'a' - 'A';
-      if (b >= 'A')
-        b -= ('A' - 10);
-      else
-        b -= '0';
-
-      *dst++ = 16 * a + b;
-      src += 3;
-    } else {
-      *dst++ = *src++;
-    }
-  }
-  *dst = '\0';
-}
-
-/*
- * Parses the body of a post request
- *
- *
- * [pool]      Memory pool to allocate the array from
- *
- * [input]     The body of the post request
- *
- * [input_len] The length of the body
- *
- *
- * Returns an array of strings terminated with a null which is at the last byte
- * of the array
- */
-char **parse_post_body(h2o_mem_pool_t *pool, const char *input,
-                       const mem_t input_len) {
-
+yueah_string_array_t *yueah_parse_form_body(h2o_mem_pool_t *pool,
+                                            const yueah_string_t *input) {
   if (!input)
     return NULL;
 
-  if (input_len == 0)
-    return NULL;
+  cstr *decoded_input = h2o_mem_alloc_pool(pool, char, input->len + 1);
+  cstr *input_cstr = yueah_string_to_cstr(pool, input);
+  yueah_urldecode(decoded_input, input_cstr);
 
-  char *decoded_input = h2o_mem_alloc_pool(pool, char, input_len + 1);
-  urldecode(decoded_input, input);
-
-  mem_t array_len = 1;
+  u64 array_len = 1;
   int part_idx = 0;
 
-  for (mem_t i = 0; i < input_len; i++)
+  for (u64 i = 0; i < input->len; i++)
     if (decoded_input[i] == '&')
       array_len = array_len + 2;
 
   char *ptr = decoded_input;
-  char **res = h2o_mem_alloc_pool(pool, char *, array_len);
+  yueah_string_t **res = h2o_mem_alloc_pool(pool, yueah_string_t, array_len);
   char *next = strtok(ptr, "&");
   while (next != NULL) {
-    mem_t part_len = strlen(next);
+    u64 part_len = strlen(next);
 
-    res[part_idx] = h2o_mem_alloc_pool(pool, char, part_len + 1);
-    memcpy(res[part_idx], next, part_len);
-    res[part_idx][part_len] = '\0';
+    res[part_idx]->data = h2o_mem_alloc_pool(pool, cstr, part_len);
+    memcpy(res[part_idx]->data, next, part_len);
 
     part_idx++;
     next = strtok(NULL, "&");
   }
 
-  res[array_len - 1] = NULL;
-  return res;
+  yueah_string_array_t *string_array =
+      h2o_mem_alloc_pool(pool, yueah_string_array_t, 1);
+  string_array->strings = res;
+  string_array->len = array_len;
+
+  return string_array;
 }
 
-h2o_iovec_t *get_cookie_content(h2o_req_t *req, const char *cookie_name) {
-  if (!cookie_name)
+yueah_string_t *yueah_get_form_val(h2o_mem_pool_t *pool,
+                                   const yueah_string_t *key,
+                                   const yueah_string_array_t *form_data) {
+  if (!key || !form_data)
     return NULL;
 
-  char cookie_content_buf[4096];
-  size_t cookie_content_len = 0;
+  u64 key_idx = 0;
+  u64 key_len = 0;
 
-  int cookie_cursor = -1;
-  int wanted_cookie_index = 0;
-  do {
-    int cookie_index =
-        h2o_find_header(&req->headers, H2O_TOKEN_COOKIE, cookie_cursor);
-    if (cookie_index == -1) {
-      yueah_log_debug("Didn't find cookie with the name %s", cookie_name);
-      return NULL;
-    }
+  for (u64 i = 0; i < form_data->len; i++) {
+    if (memcmp(form_data->strings[i]->data, key->data, key->len) != 0)
+      continue;
 
-    h2o_header_t cookie_header = req->headers.entries[cookie_index];
-    if (yueah_cookie_name_exists(cookie_header.value, cookie_name)) {
-      yueah_log_debug("Found cookie with the name %s at index %d, cursor %d",
-                      cookie_name, cookie_index, cookie_cursor);
-      wanted_cookie_index = cookie_index;
-    } else
-      cookie_cursor++;
-
-  } while (wanted_cookie_index == 0);
-
-  h2o_header_t cookie_header = req->headers.entries[wanted_cookie_index];
-  h2o_iovec_t *cookie_values = h2o_mem_alloc_pool(&req->pool, h2o_iovec_t, 1);
-
-  char needle[1024];
-  snprintf(needle, 1024, "%s=", cookie_name);
-
-  size_t cookie_name_offset =
-      h2o_strstr(cookie_header.value.base, cookie_header.value.len, needle,
-                 strlen(needle));
-
-  if (cookie_name_offset == SIZE_MAX) {
-    yueah_log_error(
-        "Failed to find cookie name in header despite being found previously");
-    return NULL;
+    key_idx = i;
   }
 
-  memcpy(cookie_content_buf, cookie_header.value.base + cookie_name_offset,
-         cookie_header.value.len - cookie_name_offset);
-  cookie_content_len = cookie_header.value.len - cookie_name_offset;
-
-  size_t semi_colon_offset = 2;
-  size_t semi_colon_end_offset =
-      h2o_strstr(cookie_content_buf, cookie_content_len, ";", 1);
-  if (semi_colon_end_offset == SIZE_MAX) {
-    semi_colon_end_offset = 0;
-    semi_colon_offset = 0;
-  }
-
-  cookie_content_len =
-      cookie_content_len - semi_colon_end_offset - semi_colon_offset;
-
-  cookie_values->base =
-      h2o_mem_alloc_pool(&req->pool, char, cookie_content_len);
-  cookie_values->len = cookie_content_len;
-
-  memcpy(cookie_values->base, cookie_content_buf, cookie_content_len);
-  return cookie_values;
+  cstr *val = (cstr *)form_data->strings[key_idx]->data + key_len + 1;
+  u64 val_len = form_data->strings[key_idx]->len - key_len - 1;
+  return yueah_string_new(pool, val, val_len);
 }
 
-int yueah_delete_cookie(h2o_req_t *req) {
-  int cookie_index = h2o_find_header(&req->headers, H2O_TOKEN_COOKIE, -1);
-  if (cookie_index == -1) {
-    yueah_log_debug("Didn't find cookie");
-    return -1;
-  }
-
-  int new = h2o_delete_header(&req->headers, cookie_index);
-  if (new == -1)
-    return -1;
-
-  return 0;
-}
-
-int generic_response(h2o_req_t *req, int status, const char *message) {
+int yueah_generic_response(h2o_req_t *req, u16 status,
+                           const yueah_string_t *message) {
   h2o_generator_t generator = {NULL, NULL};
-  error_response_t *error_response =
-      h2o_mem_alloc_pool(&req->pool, error_response_t, 1);
+  yueah_error_response_t *error_response =
+      h2o_mem_alloc_pool(&req->pool, yueah_error_response_t, 1);
 
   error_response->status = status;
   error_response->message = h2o_mem_alloc_pool(&req->pool, char *, 1024);
@@ -402,8 +274,9 @@ int generic_response(h2o_req_t *req, int status, const char *message) {
 
   yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
   yyjson_mut_val *root = yyjson_mut_obj(doc);
-  char *body = error_resp_to_json(&req->pool, doc, root, error_response);
-  h2o_iovec_t body_iovec = h2o_strdup(&req->pool, body, strlen(body));
+  yueah_string_t *body =
+      error_resp_to_json(&req->pool, doc, root, error_response);
+  h2o_iovec_t *body_iovec = yueah_string_to_iovec(&req->pool, body);
 
   req->res.status = status;
   req->res.reason = get_res_reason(status);
@@ -412,7 +285,7 @@ int generic_response(h2o_req_t *req, int status, const char *message) {
                  H2O_STRLIT("application/json; charset=utf-8"));
 
   h2o_start_response(req, &generator);
-  h2o_send(req, &body_iovec, 1, 1);
+  h2o_send(req, body_iovec, 1, 1);
 
   return 0;
 }

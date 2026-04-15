@@ -35,6 +35,20 @@ typedef struct {
 typedef yueah_string_t yueah_string_nullable_t;
 
 /*
+ * @brief A string array.
+ *
+ * @param strings The strings in the array.
+ * @param len The length of the array.
+ */
+typedef struct {
+  yueah_string_t **strings;
+  u64 len;
+} yueah_string_array_t;
+
+// Type alias for readability
+typedef yueah_string_array_t yueah_string_array_nullable_t;
+
+/*
  * @brief The configuration for CORS.
  *
  * @param allow_origin The origins that are allowed to make requests.
@@ -255,5 +269,16 @@ typedef struct {
   log_type_t log_type;
   network_config_t *network;
 } yueah_config_t;
+
+/*
+ * @brief A generic struct for generic HTTP error responses.
+ *
+ * @param message The message to send with the response.
+ * @param status The status code of the response.
+ */
+typedef struct {
+  char *message;
+  int status;
+} yueah_error_response_t;
 
 #endif // !YUEAH_TYPES_H

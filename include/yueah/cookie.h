@@ -48,4 +48,24 @@ yueah_string_t *yueah_get_cookie_content(h2o_mem_pool_t *pool,
                                          const yueah_string_t *cookie_header,
                                          const yueah_string_t *cookie_name);
 
+/*
+ * @brief Get the content of a cookie from a h2o request
+ *
+ * @param req The request to get the cookie from
+ * @param cookie_name The name of the cookie to get
+ *
+ * @return The content of the cookie or NULL if the cookie was not found
+ */
+yueah_string_t *yueah_req_get_cookie_content(h2o_req_t *req,
+                                             const yueah_string_t *cookie_name);
+
+/*
+ * @brief Deletes the cookie header from a request
+ *
+ * @param req The request to delete the cookie from
+ *
+ * @return 0 on success, -1 on failure
+ */
+int yueah_req_delete_cookie(h2o_req_t *req);
+
 #endif // !YUEAH_COOKIE_H

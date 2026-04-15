@@ -1,8 +1,8 @@
 #include <h2o.h>
 
-#include <api/utils.h>
 #include <yueah/cors.h>
 #include <yueah/log.h>
+#include <yueah/response.h>
 #include <yueah/shared.h>
 #include <yueah/string.h>
 
@@ -49,9 +49,12 @@ int yueah_add_cors_headers(h2o_req_t *req, const yueah_cors_config_t *config) {
 }
 
 int yueah_handle_options(h2o_req_t *req, const yueah_cors_config_t *config) {
+  h2o_mem_pool_t *pool = &req->pool;
+
   if (!h2o_memis(req->method.base, req->method.len, H2O_STRLIT("OPTIONS")))
-    return generic_response(
-        req, 500, "Developer goofed up: Misuse of yueah_handle_options()");
+    return yueah_generic_response(
+        req, 500,
+        YUEAH_STR("Developer goofed up: Misuse of yueah_handle_options()"));
 
   yueah_add_cors_headers(req, config);
 
