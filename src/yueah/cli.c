@@ -8,6 +8,7 @@
 #include <yueah/config.h>
 #include <yueah/log.h>
 #include <yueah/meta.h>
+#include <yueah/string.h>
 
 static void get_current_year(char (*buf)[5]) {
   struct tm local_time;
@@ -29,7 +30,6 @@ static void usage(void) {
          "    -p, --port       [port number] override port \n"
          "    -s, --ssl                      toggles HTTPS/SSL (needs a cert "
          "and key in path)\n"
-         "    -c, --compress                 toggles gzip compression\n\n"
 
          "%s, %s\n"
          "This program is licensed under %s\n",
@@ -39,19 +39,17 @@ static void usage(void) {
 
 int parse_args(int argc, char **argv, yueah_config_t **populated_args) {
   int option_index = 0;
-  char *ip_buf = {0};
+  char *ip_buf = NULL;
   unsigned int port_buf = 0;
 
   static struct option long_options[] = {
       {"help", no_argument, 0, 'h'},
       {"ip-address", required_argument, 0, 'i'},
       {"port", required_argument, 0, 'p'},
-      // requires no arg due to being bool;
-      {"compress", no_argument, 0, 'c'},
       {0, 0, 0, 0}}; // end options_arr
 
   while (1) {
-    char arg = getopt_long(argc, argv, ":hi:p:c", long_options, &option_index);
+    char arg = getopt_long(argc, argv, ":hi:p:", long_options, &option_index);
 
     if (arg == -1)
       break;
@@ -67,7 +65,8 @@ int parse_args(int argc, char **argv, yueah_config_t **populated_args) {
         yueah_log_error("Unknown ip address \"%s\"\n", ip_buf);
         return -1;
       } else {
-        (*populated_args)->network->ip = ip_buf;
+        (*populated_args)->network->ip->data = (u8 *)ip_buf;
+        (*populated_args)->network->ip->len = strlen(ip_buf);
       }
       break;
 
@@ -80,18 +79,27 @@ int parse_args(int argc, char **argv, yueah_config_t **populated_args) {
         (*populated_args)->network->port = port_buf;
       }
       break;
-
-    case 'c':
-      (*populated_args)->compression->enabled =
-          !(*populated_args)->compression->enabled;
+    case ':':
+      switch (optopt) {
+      case 'i':
+        yueah_log_error("Missing param for -i/--ip-address\n");
+        return -1;
+      case 'p':
+        yueah_log_error("Missing param for -p/--port\n");
+        return -1;
+      default:
+        yueah_log_error("Unknown option \"%c\"\n", optopt);
+        return -1;
+      }
       break;
 
     case '?':
-      fprintf(stderr, "invalid flag passed \"%s\"\n", argv[optind - 1]);
-      return 0;
+      yueah_log_error("Invalid flag passed \"%s\"\n", argv[optind - 1]);
+      return -1;
 
     default:
-      printf("?? getopt returned character code 0%o ??\n", arg);
+      yueah_log_error("?? getopt returned character code 0%o ??\n", arg);
+      return -1;
     }
   }
 

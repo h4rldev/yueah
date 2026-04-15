@@ -1,9 +1,11 @@
 #include <h2o.h>
 #include <sodium.h>
 
+#include <yueah/string.h>
+#include <yueah/types.h>
 #include <yueah/uuid.h>
 
-char *yueah_uuid_new(h2o_mem_pool_t *pool) {
+yueah_string_t *yueah_uuid_new(h2o_mem_pool_t *pool) {
   char *uuid = h2o_mem_alloc_pool(pool, char, 37);
   unsigned char uuid_bytes[16];
   randombytes_buf(uuid_bytes, 16);
@@ -19,5 +21,5 @@ char *yueah_uuid_new(h2o_mem_pool_t *pool) {
       uuid_bytes[10], uuid_bytes[11], uuid_bytes[12], uuid_bytes[13],
       uuid_bytes[14], uuid_bytes[15]);
 
-  return uuid;
+  return yueah_string_new(pool, uuid, 37);
 }

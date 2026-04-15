@@ -14,7 +14,7 @@
  * @return A yueah_string_t containing the base64 encoded content
  */
 yueah_string_t *yueah_base64_encode(h2o_mem_pool_t *pool,
-                                    yueah_string_t *content);
+                                    const yueah_string_t *content);
 
 /*
  * @brief Decode a base64 string
@@ -26,6 +26,7 @@ yueah_string_t *yueah_base64_encode(h2o_mem_pool_t *pool,
  * @return A yueah_string_t containing the decoded content
  */
 yueah_string_t *yueah_base64_decode(h2o_mem_pool_t *pool,
-                                    yueah_string_t *base64, u64 max_out_len);
+                                    const yueah_string_t *base64,
+                                    u64 max_out_len);
 
 #endif // !YUEAH_BASE64_H

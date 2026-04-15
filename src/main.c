@@ -27,6 +27,8 @@
 #include <yueah/log.h>
 #include <yueah/meta.h>
 #include <yueah/shared.h>
+#include <yueah/string.h>
+#include <yueah/types.h>
 
 #include <api/auth.h>
 #include <api/blog.h>
@@ -66,13 +68,16 @@ static void on_accept(uv_stream_t *listener, int status) {
   h2o_accept(&accept_ctx, sock);
 }
 
-static int create_listener(const char *ip, const uint16_t port) {
+static int create_listener(h2o_mem_pool_t *pool, const yueah_string_t *ip,
+                           const u16 port) {
   static uv_tcp_t listener;
   struct sockaddr_in addr;
   int r;
 
+  cstr *ip_cstr = yueah_string_to_cstr(pool, ip);
+
   uv_tcp_init(ctx.loop, &listener);
-  uv_ip4_addr(ip, port, &addr);
+  uv_ip4_addr(ip_cstr, port, &addr);
   if ((r = uv_tcp_bind(&listener, (struct sockaddr *)&addr, 0)) != 0) {
     fprintf(stderr, "uv_tcp_bind:%s\n", uv_strerror(r));
     goto Error;
@@ -98,7 +103,7 @@ static int not_found(h2o_handler_t *handler, h2o_req_t *req) {
   h2o_generator_t generator = {NULL, NULL};
 
   yueah_config_t *yueah_config;
-  read_config(&req->pool, &yueah_config);
+  read_config(&req->pool, &yueah_config, NULL);
   char html_buffer[1024] = {0};
 
   sprintf(html_buffer,
@@ -128,8 +133,8 @@ static int not_found(h2o_handler_t *handler, h2o_req_t *req) {
 }
 
 int main(int argc, char **argv) {
-  h2o_mem_pool_t pool;
-  h2o_mem_init_pool(&pool);
+  h2o_mem_pool_t *pool = {0};
+  h2o_mem_init_pool(pool);
 
   if (sodium_init() == -1)
     return -1;
@@ -146,12 +151,12 @@ int main(int argc, char **argv) {
   h2o_hostconf_t *hostconf = NULL;
   h2o_pathconf_t *pathconf = NULL;
 
-  if (read_config(&pool, &yueah_config) != 0) {
-    init_config(&pool, &yueah_config);
-    write_config(yueah_config);
+  if (read_config(pool, &yueah_config, NULL) != 0) {
+    init_config(pool, &yueah_config);
+    write_config(pool, yueah_config, NULL);
   }
 
-  yueah_log_fname = h2o_mem_alloc_pool(&pool, char, 1024);
+  yueah_log_fname = h2o_mem_alloc_pool(pool, char, 1024);
   snprintf(log_fname, 1024, "./logs/yueah-access-%02d-%02d-%02d.log",
            time_buf->tm_year + 1900, time_buf->tm_mon + 1, time_buf->tm_mday);
   snprintf(yueah_log_fname, 1024, "./logs/yueah-%02d-%02d-%02d.log",
@@ -159,8 +164,8 @@ int main(int argc, char **argv) {
 
   switch (yueah_config->log_type) {
   case Both:
-    if (path_exist("./logs/") == false)
-      make_dir("./logs/");
+    if (path_exist(pool, YUEAH_STR("./logs/")) == false)
+      make_dir(pool, YUEAH_STR("./logs/"));
 
     log2file =
         h2o_access_log_open_handle(log_fname, NULL, H2O_LOGCONF_ESCAPE_APACHE);
@@ -170,8 +175,8 @@ int main(int argc, char **argv) {
     register_logger(stdout);
     break;
   case File:
-    if (path_exist("./logs/") == false)
-      make_dir("./logs/");
+    if (path_exist(pool, YUEAH_STR("./logs/")) == false)
+      make_dir(pool, YUEAH_STR("./logs/"));
     log2file =
         h2o_access_log_open_handle(log_fname, NULL, H2O_LOGCONF_ESCAPE_APACHE);
     register_logger(yueah_log_fname);
@@ -196,24 +201,23 @@ int main(int argc, char **argv) {
   h2o_compress_register_configurator(&config);
 
   yueah_cors_configs_t *cors =
-      h2o_mem_alloc_pool(&pool, yueah_cors_configs_t, 1);
-  cors->public = h2o_mem_alloc_pool(&pool, yueah_cors_config_t, 1);
-  cors->private = h2o_mem_alloc_pool(&pool, yueah_cors_config_t, 1);
+      h2o_mem_alloc_pool(pool, yueah_cors_configs_t, 1);
+  cors->public = h2o_mem_alloc_pool(pool, yueah_cors_config_t, 1);
+  cors->private = h2o_mem_alloc_pool(pool, yueah_cors_config_t, 1);
 
   cors->public->allow_origin = NULL; // TODO: set explicitly when production
-  cors->public->allow_methods = yueah_strdup(&pool, "GET, POST, OPTIONS", 19);
-  cors->public->allow_headers = yueah_strdup(&pool, "*", 2);
-  cors->public->expose_headers = yueah_strdup(&pool, "*", 2);
+  cors->public->allow_methods = YUEAH_STR("GET, POST, OPTIONS");
+  cors->public->allow_headers = YUEAH_STR("*");
+  cors->public->expose_headers = YUEAH_STR("*");
   cors->public->allow_credentials = true;
 
   cors->private->allow_origin = NULL; // TODO: set explicitly when production
-  cors->private->allow_methods =
-      yueah_strdup(&pool, "GET, POST, PUT, DELETE, OPTIONS", 32);
-  cors->private->allow_headers = yueah_strdup(&pool, "*", 2);
-  cors->private->expose_headers = yueah_strdup(&pool, "*", 2);
+  cors->private->allow_methods = YUEAH_STR("GET, POST, PUT, DELETE, OPTIONS");
+  cors->private->allow_headers = YUEAH_STR("*");
+  cors->private->expose_headers = YUEAH_STR("*");
   cors->private->allow_credentials = true;
 
-  state = h2o_mem_alloc_pool(&pool, yueah_state_t, 1);
+  state = h2o_mem_alloc_pool(pool, yueah_state_t, 1);
   state->db_path = yueah_config->db_path;
   state->cors = cors;
 
@@ -250,19 +254,6 @@ int main(int argc, char **argv) {
   if (log2file)
     h2o_access_log_register(pathconf, log2file);
 
-  if (!yueah_config->compression->enabled)
-    goto NotCompress;
-
-  h2o_compress_args_t ca = {
-      .gzip.quality = yueah_config->compression->quality,
-  };
-
-  if (yueah_config->compression->min_size != 0)
-    ca.min_size = yueah_config->compression->min_size;
-
-  h2o_compress_register(pathconf, &ca);
-
-NotCompress:
   uv_loop_init(&loop);
   h2o_context_init(&ctx, &loop, &config);
 
@@ -270,8 +261,8 @@ NotCompress:
   accept_ctx.hosts = config.hosts;
   config.server_name = h2o_iovec_init(H2O_STRLIT("yueah"));
 
-  if (create_listener(yueah_config->network->ip, yueah_config->network->port) !=
-      0) {
+  if (create_listener(pool, yueah_config->network->ip,
+                      yueah_config->network->port) != 0) {
     yueah_log(Error, true, "failed to listen to %s:%u:%s",
               yueah_config->network->ip, yueah_config->network->port,
               strerror(errno));
@@ -289,7 +280,7 @@ NotCompress:
             yueah_config->network->port);
   uv_run(ctx.loop, UV_RUN_DEFAULT);
 
-  h2o_mem_clear_pool(&pool);
+  h2o_mem_clear_pool(pool);
   return 0;
 
 Error:

@@ -31,12 +31,14 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
 /*
  * @brief Write the config
  *
+ * @param pool The memory pool to allocate from
  * @param config The config to write
  * @param path The path to write the config to (CAN BE NULL to use default path
  * (current directory))
  *
  * @return 0 on success
  */
-int write_config(yueah_config_t *config, yueah_string_nullable_t *path);
+int write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
+                 yueah_string_nullable_t *path);
 
 #endif // !YUEAH_CONFIG_H

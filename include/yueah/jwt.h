@@ -57,6 +57,7 @@ bool yueah_jwt_verify(h2o_mem_pool_t *pool, const yueah_string_t *token,
  * @param pool Memory pool to allocate from
  * @param token Token to get the subject from
  */
-char *yueah_jwt_get_sub(h2o_mem_pool_t *pool, const yueah_string_t *token);
+yueah_string_t *yueah_jwt_get_sub(h2o_mem_pool_t *pool,
+                                  const yueah_string_t *token);
 
 #endif // !YUEAH_JWT_H

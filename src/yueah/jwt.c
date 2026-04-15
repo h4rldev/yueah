@@ -10,8 +10,11 @@
 #include <yueah/file.h>
 #include <yueah/jwt.h>
 #include <yueah/log.h>
+#include <yueah/string.h>
+#include <yueah/types.h>
 
-static int yueah_generate_jwt_key(const char *key_path) {
+static int yueah_generate_jwt_key(h2o_mem_pool_t *pool,
+                                  const yueah_string_t *key_path) {
   if (!key_path) {
     yueah_log_error("Invalid key path");
     return -1;
@@ -19,20 +22,21 @@ static int yueah_generate_jwt_key(const char *key_path) {
 
   FILE *key_file;
 
-  mem_t key_len = crypto_auth_hmacsha512_KEYBYTES;
-  mem_t hex_key_len = crypto_auth_hmacsha512_KEYBYTES * 2 + 1;
+  u64 key_len = crypto_auth_hmacsha512_KEYBYTES;
+  u64 hex_key_len = crypto_auth_hmacsha512_KEYBYTES * 2 + 1;
 
-  unsigned char key[crypto_auth_hmacsha512_KEYBYTES];
-  char hex_key[crypto_auth_hmacsha512_KEYBYTES * 2 + 1];
+  ucstr key[crypto_auth_hmacsha512_KEYBYTES];
+  cstr hex_key[crypto_auth_hmacsha512_KEYBYTES * 2 + 1];
 
   crypto_auth_hmacsha512_keygen(key);
-  char *hex_key_str = sodium_bin2hex(hex_key, hex_key_len, key, key_len);
+  cstr *hex_key_str = sodium_bin2hex(hex_key, hex_key_len, key, key_len);
   if (!hex_key_str) {
     yueah_log_error("Failed to make key hex");
     return -1;
   }
 
-  key_file = fopen(key_path, "w");
+  cstr *key_path_cstr = yueah_string_to_cstr(pool, key_path);
+  key_file = fopen(key_path_cstr, "w");
   hex_key[strlen(hex_key)] = '\n';
   fwrite(hex_key, sizeof(hex_key), 1, key_file);
   fwrite("use this key instead ^", strlen("use this key instead ^"), 1,
@@ -42,17 +46,18 @@ static int yueah_generate_jwt_key(const char *key_path) {
   return 0;
 }
 
-static int yueah_generate_access_jwt_key(void) {
-  return yueah_generate_jwt_key("access_jwt_key.txt");
+static int yueah_generate_access_jwt_key(h2o_mem_pool_t *pool) {
+  return yueah_generate_jwt_key(pool, YUEAH_STR("access_jwt_key.txt"));
 }
 
-static int yueah_generate_refresh_jwt_key(void) {
-  return yueah_generate_jwt_key("refresh_jwt_key.txt");
+static int yueah_generate_refresh_jwt_key(h2o_mem_pool_t *pool) {
+  return yueah_generate_jwt_key(pool, YUEAH_STR("refresh_jwt_key.txt"));
 }
 
-static unsigned char *yueah_get_jwt_key(yueah_jwt_key_type_t key_type) {
-  char key_path[1024];
-  char key_var[1024];
+static yueah_string_t *yueah_get_jwt_key(h2o_mem_pool_t *pool,
+                                         yueah_jwt_key_type_t key_type) {
+  cstr key_path[1024];
+  cstr key_var[1024];
 
   switch (key_type) {
   case Access:
@@ -70,9 +75,9 @@ static unsigned char *yueah_get_jwt_key(yueah_jwt_key_type_t key_type) {
     return NULL;
   }
 
-  const char *key = getenv(key_var);
+  const cstr *key = getenv(key_var);
   int rc = 0;
-  mem_t key_len = 0;
+  u64 key_len = 0;
   static unsigned char key_buf[crypto_auth_hmacsha512_KEYBYTES];
 
   if (!key) {
@@ -80,10 +85,10 @@ static unsigned char *yueah_get_jwt_key(yueah_jwt_key_type_t key_type) {
                     key_path);
     switch (key_type) {
     case Access:
-      yueah_generate_access_jwt_key();
+      yueah_generate_access_jwt_key(pool);
       break;
     case Refresh:
-      yueah_generate_refresh_jwt_key();
+      yueah_generate_refresh_jwt_key(pool);
       break;
     default:
       yueah_log_error("Invalid key type");
@@ -92,7 +97,7 @@ static unsigned char *yueah_get_jwt_key(yueah_jwt_key_type_t key_type) {
     return NULL;
   }
 
-  char hex_key_end[64];
+  cstr hex_key_end[64];
 
   rc = sodium_hex2bin(key_buf, crypto_auth_hmacsha512_KEYBYTES, key,
                       strlen(key), NULL, &key_len, (const char **)&hex_key_end);
@@ -107,10 +112,10 @@ static unsigned char *yueah_get_jwt_key(yueah_jwt_key_type_t key_type) {
                     key_var, key_path);
     switch (key_type) {
     case Access:
-      yueah_generate_access_jwt_key();
+      yueah_generate_access_jwt_key(pool);
       break;
     case Refresh:
-      yueah_generate_refresh_jwt_key();
+      yueah_generate_refresh_jwt_key(pool);
       break;
     default:
       yueah_log_error("Invalid key type");
@@ -119,37 +124,35 @@ static unsigned char *yueah_get_jwt_key(yueah_jwt_key_type_t key_type) {
     return NULL;
   }
 
-  key_buf[key_len - 1] = '\0';
-  return key_buf;
+  return yueah_string_new(pool, (cstr *)key_buf, key_len);
 }
 
 static yueah_jwt_header_t *yueah_jwt_create_header(h2o_mem_pool_t *pool) {
   yueah_jwt_header_t *header = h2o_mem_alloc_pool(pool, yueah_jwt_header_t, 1);
-  header->alg = h2o_mem_alloc_pool(pool, char, strlen("HS512") + 1);
-  header->typ = h2o_mem_alloc_pool(pool, char, strlen("JWT") + 1);
-
-  header->alg = "HS512";
-  header->typ = "JWT";
+  header->alg = YUEAH_STR("HS512");
+  header->typ = YUEAH_STR("JWT");
 
   return header;
 }
 
-static char *yueah_jwt_header_to_json(h2o_mem_pool_t *pool,
-                                      const yueah_jwt_header_t *header,
-                                      mem_t *out_len) {
-  char *header_json = NULL;
+static yueah_string_t *
+yueah_jwt_header_to_json(h2o_mem_pool_t *pool,
+                         const yueah_jwt_header_t *header) {
+  cstr *header_json = NULL;
 
-  mem_t header_json_len = 0;
+  u64 header_json_len = 0;
   yyjson_write_err err;
 
   yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
   yyjson_mut_val *root = yyjson_mut_obj(doc);
 
   yyjson_mut_val *alg_key = yyjson_mut_str(doc, "alg");
-  yyjson_mut_val *alg_val = yyjson_mut_str(doc, header->alg);
+  cstr *alg_val_cstr = yueah_string_to_cstr(pool, header->alg);
+  yyjson_mut_val *alg_val = yyjson_mut_str(doc, alg_val_cstr);
 
   yyjson_mut_val *typ_key = yyjson_mut_str(doc, "typ");
-  yyjson_mut_val *typ_val = yyjson_mut_str(doc, header->typ);
+  cstr *typ_val_cstr = yueah_string_to_cstr(pool, header->typ);
+  yyjson_mut_val *typ_val = yyjson_mut_str(doc, typ_val_cstr);
 
   yyjson_mut_obj_add(root, alg_key, alg_val);
   yyjson_mut_obj_add(root, typ_key, typ_val);
@@ -166,69 +169,62 @@ static char *yueah_jwt_header_to_json(h2o_mem_pool_t *pool,
     return NULL;
   }
 
-  *out_len = header_json_len;
-  return header_json;
+  return yueah_string_new(pool, header_json, header_json_len);
 }
 
-static char *yueah_jwt_encode_header(h2o_mem_pool_t *pool,
-                                     yueah_jwt_header_t *header,
-                                     mem_t *out_len) {
-  char *encoded_header = NULL;
-  char *header_json = NULL;
-  mem_t header_json_len = 0;
-  mem_t base64_out_len = 0;
-
-  header_json = yueah_jwt_header_to_json(pool, header, &header_json_len);
+static yueah_string_t *yueah_jwt_encode_header(h2o_mem_pool_t *pool,
+                                               yueah_jwt_header_t *header) {
+  yueah_string_t *encoded_header = NULL;
+  yueah_string_t *header_json = NULL;
+  header_json = yueah_jwt_header_to_json(pool, header);
   if (!header_json) {
     yueah_log_error("Error encoding header");
     return NULL;
   }
 
-  encoded_header = yueah_base64_encode(pool, (unsigned char *)header_json,
-                                       header_json_len, &base64_out_len);
-
+  encoded_header = yueah_base64_encode(pool, header_json);
   if (!encoded_header) {
     yueah_log_error("Error encoding header");
     return NULL;
   }
 
-  *out_len = base64_out_len;
   return encoded_header;
 }
 
-static char *yueah_generate_jti(h2o_mem_pool_t *pool) {
-  size_t bin_len = 32 / 2;
-  unsigned char random_bytes[bin_len];
-  char jti_hex[bin_len * 2 + 1];
+static yueah_string_t *yueah_generate_jti(h2o_mem_pool_t *pool) {
+  u64 bin_len = 32 / 2;
+  ucstr random_bytes[bin_len];
+  cstr jti_hex[bin_len * 2 + 1];
 
   randombytes_buf(random_bytes, bin_len);
-  char *jti_hex_str =
+  cstr *jti_hex_str =
       sodium_bin2hex(jti_hex, bin_len * 2 + 1, random_bytes, bin_len);
   if (!jti_hex_str) {
     yueah_log_error("Failed to make jti hex");
     return NULL;
   }
 
-  char *jti = h2o_mem_alloc_pool(pool, char, bin_len * 2 + 1);
+  cstr *jti = h2o_mem_alloc_pool(pool, char, bin_len * 2 + 1);
   memcpy(jti, jti_hex, bin_len * 2 + 1);
 
-  return jti;
+  return yueah_string_new(pool, jti, bin_len * 2 + 1);
 }
 
 yueah_jwt_claims_t *yueah_jwt_create_claims(h2o_mem_pool_t *pool,
-                                            const char *iss, const char *sub,
-                                            const char *aud, const mem_t exp,
-                                            const mem_t nbf) {
+                                            const yueah_string_t *iss,
+                                            const yueah_string_t *sub,
+                                            const yueah_string_t *aud,
+                                            const u64 exp, const u64 nbf) {
   yueah_jwt_claims_t *claims = h2o_mem_alloc_pool(pool, yueah_jwt_claims_t, 1);
 
   time_t now = time(NULL);
-  mem_t exp_time = now + exp;
-  mem_t iat_time = now;
-  mem_t nbf_time = now + nbf;
+  u64 exp_time = now + exp;
+  u64 iat_time = now;
+  u64 nbf_time = now + nbf;
 
-  claims->iss = yueah_strdup(pool, iss, strlen(iss) + 1);
-  claims->sub = yueah_strdup(pool, sub, strlen(sub) + 1);
-  claims->aud = yueah_strdup(pool, aud, strlen(aud) + 1);
+  claims->iss = iss;
+  claims->sub = sub;
+  claims->aud = aud;
   claims->iat = iat_time;
   claims->exp = exp_time;
   claims->jti = yueah_generate_jti(pool);
@@ -237,25 +233,29 @@ yueah_jwt_claims_t *yueah_jwt_create_claims(h2o_mem_pool_t *pool,
   return claims;
 }
 
-static char *yueah_payload_to_json(h2o_mem_pool_t *pool,
-                                   const yueah_jwt_claims_t *claims,
-                                   mem_t *out_len) {
-  char *payload_json = NULL;
+static yueah_string_t *yueah_payload_to_json(h2o_mem_pool_t *pool,
+                                             const yueah_jwt_claims_t *claims) {
+  cstr *payload_json = NULL;
 
-  mem_t payload_json_len = 0;
+  u64 payload_json_len = 0;
   yyjson_write_err err;
 
   yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
   yyjson_mut_val *root = yyjson_mut_obj(doc);
 
+  cstr *iss_cstr = yueah_string_to_cstr(pool, claims->iss);
+  cstr *sub_cstr = yueah_string_to_cstr(pool, claims->sub);
+  cstr *aud_cstr = yueah_string_to_cstr(pool, claims->aud);
+  cstr *jti_cstr = yueah_string_to_cstr(pool, claims->jti);
+
   yyjson_mut_val *iss_key = yyjson_mut_str(doc, "iss");
-  yyjson_mut_val *iss_val = yyjson_mut_str(doc, claims->iss);
+  yyjson_mut_val *iss_val = yyjson_mut_str(doc, iss_cstr);
 
   yyjson_mut_val *sub_key = yyjson_mut_str(doc, "sub");
-  yyjson_mut_val *sub_val = yyjson_mut_str(doc, claims->sub);
+  yyjson_mut_val *sub_val = yyjson_mut_str(doc, sub_cstr);
 
   yyjson_mut_val *aud_key = yyjson_mut_str(doc, "aud");
-  yyjson_mut_val *aud_val = yyjson_mut_str(doc, claims->aud);
+  yyjson_mut_val *aud_val = yyjson_mut_str(doc, aud_cstr);
 
   yyjson_mut_val *iat_key = yyjson_mut_str(doc, "iat");
   yyjson_mut_val *iat_val = yyjson_mut_uint(doc, claims->iat);
@@ -264,7 +264,7 @@ static char *yueah_payload_to_json(h2o_mem_pool_t *pool,
   yyjson_mut_val *exp_val = yyjson_mut_uint(doc, claims->exp);
 
   yyjson_mut_val *jti_key = yyjson_mut_str(doc, "jti");
-  yyjson_mut_val *jti_val = yyjson_mut_str(doc, claims->jti);
+  yyjson_mut_val *jti_val = yyjson_mut_str(doc, jti_cstr);
 
   yyjson_mut_val *nbf_key = yyjson_mut_str(doc, "nbf");
   yyjson_mut_val *nbf_val = yyjson_mut_uint(doc, claims->nbf);
@@ -291,19 +291,19 @@ static char *yueah_payload_to_json(h2o_mem_pool_t *pool,
     return NULL;
   }
 
-  *out_len = payload_json_len;
-  return payload_json;
+  return yueah_string_new(pool, payload_json, payload_json_len);
 }
 
-static unsigned char *yueah_jwt_create_signature_from_str(
-    h2o_mem_pool_t *pool, const unsigned char *key, const unsigned char *body,
-    mem_t body_len, mem_t *out_len) {
+static yueah_string_t *
+yueah_jwt_create_signature_from_str(h2o_mem_pool_t *pool,
+                                    const yueah_string_t *key,
+                                    const yueah_string_t *body) {
   int rc = 0;
-  unsigned char *signature = NULL;
-  unsigned char hash[crypto_auth_hmacsha512_BYTES];
+  ucstr *signature = NULL;
+  ucstr hash[crypto_auth_hmacsha512_BYTES];
 
-  rc = crypto_auth_hmacsha512(hash, body, body_len, key);
-  if (rc != 0) {
+  ucstr *key_cstr = (ucstr *)yueah_string_to_cstr(pool, key);
+  if (crypto_auth_hmacsha512(hash, body->data, body->len, key_cstr) != 0) {
     yueah_log_error("Failed to hash hmac, return code %d", rc);
     return NULL;
   }
@@ -312,180 +312,158 @@ static unsigned char *yueah_jwt_create_signature_from_str(
       h2o_mem_alloc_pool(pool, unsigned char, crypto_auth_hmacsha512_BYTES);
   memcpy(signature, hash, crypto_auth_hmacsha512_BYTES);
 
-  *out_len = crypto_auth_hmacsha512_BYTES;
-  return signature;
+  return yueah_string_new(pool, (cstr *)signature,
+                          crypto_auth_hmacsha512_BYTES);
 }
 
-static unsigned char *
-yueah_jwt_create_signature(h2o_mem_pool_t *pool, const unsigned char *key,
+static yueah_string_t *
+yueah_jwt_create_signature(h2o_mem_pool_t *pool, const yueah_string_t *key,
                            const yueah_jwt_claims_t *claims,
-                           const yueah_jwt_header_t *header, mem_t *out_len) {
+                           const yueah_jwt_header_t *header) {
 
-  mem_t header_json_len = 0;
-  mem_t payload_out_len = 0;
-  mem_t concat_len = 0;
+  u64 concat_len = 0;
 
-  char *header_json = yueah_jwt_header_to_json(pool, header, &header_json_len);
-  char *payload_json = yueah_payload_to_json(pool, claims, &payload_out_len);
+  yueah_string_t *header_json = yueah_jwt_header_to_json(pool, header);
+  yueah_string_t *payload_json = yueah_payload_to_json(pool, claims);
 
-  concat_len = header_json_len + payload_out_len + 1;
+  concat_len = header_json->len + payload_json->len + 1;
 
-  unsigned char *concat = h2o_mem_alloc_pool(pool, unsigned char, concat_len);
-  memcpy(concat, header_json, header_json_len);
-  memcpy(concat + header_json_len, ".", 1);
-  memcpy(concat + header_json_len + 1, payload_json, payload_out_len);
+  yueah_string_t *concat = yueah_string_new(pool, NULL, concat_len);
+  memcpy(concat->data, header_json->data, header_json->len);
+  memcpy(concat->data + header_json->len, ".", 1);
+  memcpy(concat->data + header_json->len + 1, payload_json->data,
+         payload_json->len);
 
-  return yueah_jwt_create_signature_from_str(pool, key, concat, concat_len,
-                                             out_len);
+  return yueah_jwt_create_signature_from_str(pool, key, concat);
 }
 
-static char *yueah_jwt_encode_signature(h2o_mem_pool_t *pool,
-                                        const unsigned char *key,
-                                        const yueah_jwt_claims_t *claims,
-                                        const yueah_jwt_header_t *header,
-                                        mem_t *out_len) {
-  char *encoded_signature = NULL;
-  mem_t signature_len = 0;
-  unsigned char *signature =
-      yueah_jwt_create_signature(pool, key, claims, header, &signature_len);
+static yueah_string_t *
+yueah_jwt_encode_signature(h2o_mem_pool_t *pool, const yueah_string_t *key,
+                           const yueah_jwt_claims_t *claims,
+                           const yueah_jwt_header_t *header) {
+  yueah_string_t *encoded_signature = NULL;
+  yueah_string_t *signature =
+      yueah_jwt_create_signature(pool, key, claims, header);
 
-  mem_t base64_out_len = 0;
-  encoded_signature =
-      yueah_base64_encode(pool, signature, signature_len, &base64_out_len);
-  if (!encoded_signature || base64_out_len < 10) {
+  encoded_signature = yueah_base64_encode(pool, signature);
+  if (!encoded_signature || encoded_signature->len < 10) {
     yueah_log_error("Failed to encode signature");
     return NULL;
   }
 
-  *out_len = base64_out_len;
   return encoded_signature;
 }
 
-static char *yueah_jwt_encode_payload(h2o_mem_pool_t *pool,
-                                      const unsigned char *key,
-                                      const yueah_jwt_claims_t *payload,
-                                      mem_t *out_len) {
-  mem_t json_payload_len = 0;
-  char *json_payload = yueah_payload_to_json(pool, payload, &json_payload_len);
-  char *encoded_payload = NULL;
+static yueah_string_t *
+yueah_jwt_encode_payload(h2o_mem_pool_t *pool, const yueah_string_t *key,
+                         const yueah_jwt_claims_t *payload) {
+  yueah_string_t *json_payload = yueah_payload_to_json(pool, payload);
+  yueah_string_t *encoded_payload = NULL;
 
-  mem_t base64_out_len = 0;
-  encoded_payload = yueah_base64_encode(pool, (unsigned char *)json_payload,
-                                        json_payload_len, &base64_out_len);
-  if (!encoded_payload || base64_out_len < 10) {
+  encoded_payload = yueah_base64_encode(pool, json_payload);
+  if (!encoded_payload || encoded_payload->len < 10) {
     yueah_log_error("Failed to encode payload");
     return NULL;
   }
 
-  *out_len = base64_out_len;
   return encoded_payload;
 }
 
-char *yueah_jwt_encode(h2o_mem_pool_t *pool, const yueah_jwt_claims_t *payload,
-                       yueah_jwt_key_type_t key_type, mem_t *out_len) {
-  const unsigned char *key = yueah_get_jwt_key(key_type);
+yueah_string_t *yueah_jwt_encode(h2o_mem_pool_t *pool,
+                                 const yueah_jwt_claims_t *payload,
+                                 yueah_jwt_key_type_t key_type) {
+  const yueah_string_t *key = yueah_get_jwt_key(pool, key_type);
   if (!key)
     return NULL;
 
   yueah_jwt_header_t *header = yueah_jwt_create_header(pool);
   const yueah_jwt_claims_t *claims = payload;
 
-  mem_t encoded_header_len = 0;
-  mem_t encoded_payload_len = 0;
-  mem_t encoded_signature_len = 0;
-  mem_t concat_len = 0;
+  u64 concat_len = 0;
 
-  char *encoded_header =
-      yueah_jwt_encode_header(pool, header, &encoded_header_len);
-  char *encoded_payload =
-      yueah_jwt_encode_payload(pool, key, claims, &encoded_payload_len);
-  char *encoded_signature = yueah_jwt_encode_signature(
-      pool, key, claims, header, &encoded_signature_len);
+  yueah_string_t *encoded_header = yueah_jwt_encode_header(pool, header);
+  yueah_string_t *encoded_payload = yueah_jwt_encode_payload(pool, key, claims);
+  yueah_string_t *encoded_signature =
+      yueah_jwt_encode_signature(pool, key, claims, header);
 
   concat_len =
-      encoded_header_len + encoded_payload_len + encoded_signature_len + 2;
-  char *concat = h2o_mem_alloc_pool(pool, char, concat_len);
+      encoded_header->len + encoded_payload->len + encoded_signature->len + 2;
+  yueah_string_t *concat = yueah_string_new(pool, NULL, concat_len);
 
-  memcpy(concat, encoded_header, encoded_header_len);
-  memcpy(concat + encoded_header_len, ".", 1);
-  memcpy(concat + encoded_header_len + 1, encoded_payload, encoded_payload_len);
-  memcpy(concat + encoded_header_len + 1 + encoded_payload_len, ".", 1);
-  memcpy(concat + encoded_header_len + 1 + encoded_payload_len + 1,
-         encoded_signature, encoded_signature_len);
+  memcpy(concat->data, encoded_header->data, encoded_header->len);
+  memcpy(concat->data + encoded_header->len, ".", 1);
+  memcpy(concat->data + encoded_header->len + 1, encoded_payload->data,
+         encoded_payload->len);
+  memcpy(concat->data + encoded_header->len + 1 + encoded_payload->len, ".", 1);
+  memcpy(concat->data + encoded_header->len + 1 + encoded_payload->len + 1,
+         encoded_signature->data, encoded_signature->len);
 
-  *out_len = concat_len;
   return concat;
 }
 
-bool yueah_jwt_verify(h2o_mem_pool_t *pool, const char *token, mem_t token_len,
-                      const char *aud, yueah_jwt_key_type_t key_type) {
-  unsigned char *key = yueah_get_jwt_key(key_type);
+bool yueah_jwt_verify(h2o_mem_pool_t *pool, const yueah_string_t *token,
+                      const yueah_string_t *aud,
+                      yueah_jwt_key_type_t key_type) {
+  yueah_string_t *key = yueah_get_jwt_key(pool, key_type);
   if (!key)
     return false;
 
-  mem_t header_len = 0;
-  mem_t payload_len = 0;
-  mem_t signature_len = 0;
+  u64 header_len = 0;
+  u64 payload_len = 0;
+  u64 signature_len = 0;
 
-  char header[1024] = {0};
-  unsigned char *header_json = NULL;
-  mem_t header_json_len = 0;
-  char payload[2048] = {0};
-  unsigned char *payload_json = NULL;
-  mem_t payload_json_len = 0;
-  char signature[1024] = {0};
-  unsigned char *decoded_signature = NULL;
-  mem_t decoded_signature_len = 0;
+  cstr header_cstr[1024] = {0};
+  yueah_string_t *header = {0};
+  yueah_string_t *header_json = {0};
 
-  header_len = strchr(token, '.') - token;
-  payload_len = strchr(token + header_len + 1, '.') - token - header_len - 1;
-  signature_len = strlen(token) - header_len - payload_len - 2;
+  cstr payload_cstr[2048] = {0};
+  yueah_string_t *payload = {0};
+  yueah_string_t *payload_json = {0};
 
-  sscanf(token, "%[^.].%[^.].%s", header, payload, signature);
+  cstr signature_cstr[1024] = {0};
+  yueah_string_t *signature = {0};
+  yueah_string_t *decoded_signature = {0};
 
-  yueah_base64_decode(pool, header, header_len, 1024, &header_json_len);
-  if (header_json_len < 10) {
-    yueah_log_error("Failed to decode header");
-    return false;
-  }
+  yueah_string_t *concat = {0};
 
-  yueah_base64_decode(pool, payload, payload_len, 2048, &payload_json_len);
-  if (payload_json_len < 10) {
-    yueah_log_error("Failed to decode payload");
-    return false;
-  }
+  cstr *token_cstr = yueah_string_to_cstr(pool, token);
+  header_len = strchr(token_cstr, '.') - token_cstr;
+  payload_len =
+      strchr(token_cstr + header_len + 1, '.') - token_cstr - header_len - 1;
+  signature_len = strlen(token_cstr) - header_len - payload_len - 2;
 
-  mem_t concat_len = header_json_len + payload_json_len + 1;
-  unsigned char *concat = h2o_mem_alloc_pool(pool, unsigned char, concat_len);
+  sscanf(token_cstr, "%[^.].%[^.].%s", header_cstr, payload_cstr,
+         signature_cstr);
 
-  header_json =
-      yueah_base64_decode(pool, header, header_len, 1024, &header_json_len);
+  header = yueah_string_new(pool, header_cstr, header_len);
+  payload = yueah_string_new(pool, payload_cstr, payload_len);
 
-  memcpy(concat, header_json, header_json_len);
-  memcpy(concat + header_json_len, ".", 1);
+  header_json = yueah_base64_decode(pool, header, header_len);
+  payload_json = yueah_base64_decode(pool, payload, payload_len);
 
-  payload_json =
-      yueah_base64_decode(pool, payload, payload_len, 2048, &payload_json_len);
+  concat =
+      yueah_string_new(pool, NULL, header_json->len + payload_json->len + 1);
 
-  memcpy(concat + header_json_len + 1, payload_json, payload_json_len);
+  memcpy(concat->data, header_json->data, header_json->len);
+  memcpy(concat->data + header_json->len, ".", 1);
+  memcpy(concat->data + header_json->len + 1, payload_json->data,
+         payload_json->len);
 
-  mem_t generated_signature_len = 0;
-  unsigned char *generated_signature = yueah_jwt_create_signature_from_str(
-      pool, key, concat, concat_len, &generated_signature_len);
+  yueah_string_t *generated_signature =
+      yueah_jwt_create_signature_from_str(pool, key, concat);
 
   decoded_signature = yueah_base64_decode(
-      pool, signature, signature_len,
-      signature_len + crypto_auth_hmacsha512_BYTES, &decoded_signature_len);
+      pool, signature, signature_len + crypto_auth_hmacsha512_BYTES);
 
-  if (sodium_memcmp(generated_signature, decoded_signature,
-                    decoded_signature_len) != 0)
+  if (sodium_memcmp(generated_signature->data, decoded_signature->data,
+                    decoded_signature->len) != 0)
     return false;
 
   return true;
 }
 
-char *yueah_jwt_get_sub(h2o_mem_pool_t *pool, const char *token,
-                        mem_t token_len) {
+yueah_string_t *yueah_jwt_get_sub(h2o_mem_pool_t *pool,
+                                  const yueah_string_t *token) {
   time_t now_local = time(NULL);
   struct tm *time_buf = localtime(&now_local);
   time_t now = timegm(time_buf);
@@ -503,28 +481,34 @@ char *yueah_jwt_get_sub(h2o_mem_pool_t *pool, const char *token,
   yyjson_val *jti_val = NULL;
   yyjson_val *nbf_val = NULL;
 
-  mem_t header_len = 0;
-  mem_t payload_len = 0;
+  u64 header_len = 0;
+  u64 payload_len = 0;
 
-  char header[1024] = {0};
-  char payload[2048] = {0};
-  unsigned char *payload_json = NULL;
-  mem_t payload_json_len = 0;
-  char signature[1024] = {0};
+  cstr header_cstr[1024] = {0};
+  cstr payload_cstr[2048] = {0};
+  yueah_string_t *payload = {0};
 
-  header_len = strchr(token, '.') - token;
-  payload_len = strchr(token + header_len + 1, '.') - token - header_len - 1;
+  yueah_string_t *payload_json = {0};
+  cstr signature_cstr[1024] = {0};
 
-  sscanf(token, "%[^.].%[^.].%s", header, payload, signature);
+  cstr *token_cstr = yueah_string_to_cstr(pool, token);
 
-  payload_json =
-      yueah_base64_decode(pool, payload, payload_len, 2048, &payload_json_len);
-  if (!payload_json || payload_json_len < 10) {
+  header_len = strchr(token_cstr, '.') - token_cstr;
+  payload_len =
+      strchr(token_cstr + header_len + 1, '.') - token_cstr - header_len - 1;
+
+  sscanf(token_cstr, "%[^.].%[^.].%s", header_cstr, payload_cstr,
+         signature_cstr);
+
+  payload_json = yueah_base64_decode(pool, payload, payload_len);
+
+  payload_json = yueah_base64_decode(pool, payload, 2048);
+  if (!payload_json || payload_json->len < 10) {
     yueah_log_error("Failed to decode payload");
     return NULL;
   }
 
-  doc = yyjson_read_opts((char *)payload_json, payload_json_len,
+  doc = yyjson_read_opts((char *)payload_json->data, payload_json->len,
                          YYJSON_READ_NOFLAG, NULL, &err);
   if (!doc) {
     yueah_log_error("Error parsing json: %d:%s", err.code, err.msg);
@@ -596,8 +580,9 @@ char *yueah_jwt_get_sub(h2o_mem_pool_t *pool, const char *token,
     return NULL;
   }
 
-  mem_t sub_val_len = strlen(yyjson_get_str(sub_val));
-  char *sub = yueah_strdup(pool, yyjson_get_str(sub_val), sub_val_len + 1);
+  u64 sub_val_len = strlen(yyjson_get_str(sub_val));
+  yueah_string_t *sub =
+      yueah_string_new(pool, yyjson_get_str(sub_val), sub_val_len);
   if (sub == NULL || sub_val_len < 10) {
     yueah_log_error("Failed to get sub");
     return NULL;

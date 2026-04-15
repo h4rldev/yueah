@@ -5,11 +5,7 @@
 #include <time.h>
 
 #include <yueah/log.h>
-
-typedef struct {
-  FILE *fd;
-  char *path;
-} state_console_target_t;
+#include <yueah/types.h>
 
 static state_console_target_t state_console_target = {NULL, NULL};
 
@@ -136,7 +132,7 @@ void yueah_log(log_level_t level, bool time, const char *fmt, ...) {
   }
 }
 
-void yueah_log_bytes(log_level_t level, bool time, mem_t bytes, const char *fmt,
+void yueah_log_bytes(log_level_t level, bool time, u64 bytes, const char *fmt,
                      ...) {
 #ifndef YUEAH_DEBUG
   if (level == Debug)

@@ -4,15 +4,27 @@
 #include <h2o.h>
 #include <sqlite3.h>
 
-#include <yueah/config.h>
 #include <yueah/types.h>
 
-typedef enum {
-  READ = 1 << 0,
-  WRITE = 1 << 1,
-} yueah_db_flags_t;
+/*
+ * @brief Connect to a database
+ *
+ * @param db_path The path to the database
+ * @param db The database pointer
+ * @param flags The flags to use when connecting to the database
+ *
+ * @return 0 on success
+ */
+int yueah_db_connect(h2o_mem_pool_t *pool, const yueah_string_t *db_path,
+                     sqlite3 **db, int flags);
 
-int yueah_db_connect(const yueah_string_t *db_path, sqlite3 **db, int flags);
+/*
+ * @brief Disconnect from a database
+ *
+ * @param db The database pointer
+ *
+ * @return 0 on success
+ */
 int yueah_db_disconnect(sqlite3 *db);
 
 #endif // !YUEAH_DB_H

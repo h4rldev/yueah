@@ -6,9 +6,9 @@
 #include <yueah/types.h>
 
 // Data conversion macros
-#define KiB(num) ((mem_t)(num) << 10)
-#define MiB(num) ((mem_t)(num) << 20)
-#define GiB(num) ((mem_t)(num) << 30)
+#define KiB(num) ((u64)(num) << 10)
+#define MiB(num) ((u64)(num) << 20)
+#define GiB(num) ((u64)(num) << 30)
 
 /*
  * @brief Duplicate a cstr
@@ -29,25 +29,5 @@ cstr *yueah_cstrdup(h2o_mem_pool_t *pool, const cstr *str, u64 size);
  * @param size The size of the string
  */
 void print_hex(const char *label, const yueah_string_t *str);
-
-/*
- * @brief Convert a h2o_iovec to a cstr
- *
- * @param pool The memory pool to allocate from
- * @param iovec The iovec to convert
- *
- * @return A null terminated cstr containing the data the iovec pointed to.
- */
-cstr *yueah_iovec_to_cstr(h2o_mem_pool_t *pool, h2o_iovec_t *iovec);
-
-/*
- * @brief Convert a h2o_iovec to a yueah_string_t
- *
- * @param pool The memory pool to allocate from
- * @param iovec The iovec to convert
- *
- * @return A yueah_string_t containing the data the iovec pointed to.
- */
-yueah_string_t *yueah_iovec_to_string(h2o_mem_pool_t *pool, h2o_iovec_t *iovec);
 
 #endif // !YUEAH_SHARED_

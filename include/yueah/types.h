@@ -16,6 +16,9 @@ typedef int16_t i16;
 typedef int8_t i8;
 
 typedef char cstr;
+typedef cstr cstr_nullable;
+typedef unsigned char ucstr;
+typedef ucstr ucstr_nullable;
 
 /*
  * @brief A string with a length, to not be limited by null terminator.
@@ -121,6 +124,16 @@ typedef enum {
   Debug,
 } log_level_t;
 
+/*
+ * @brief The state for the console logger
+ *
+ * @param fd The file descriptor to log to
+ * @param path The path to log to
+ */
+typedef struct {
+  FILE *fd;
+  char *path;
+} state_console_target_t;
 /*
  * @brief JWT header.
  *

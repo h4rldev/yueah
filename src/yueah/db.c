@@ -5,19 +5,22 @@
 
 #include <yueah/db.h>
 #include <yueah/log.h>
+#include <yueah/string.h>
 
-int yueah_db_connect(const char *db_path, sqlite3 **db, int flags) {
+int yueah_db_connect(h2o_mem_pool_t *pool, const yueah_string_t *db_path,
+                     sqlite3 **db, int flags) {
   int rc = SQLITE_OK;
+  cstr *db_path_cstr = yueah_string_to_cstr(pool, db_path);
 
   switch (flags) {
   case READ:
-    rc = sqlite3_open_v2(db_path, db, SQLITE_OPEN_READONLY, NULL);
+    rc = sqlite3_open_v2(db_path_cstr, db, SQLITE_OPEN_READONLY, NULL);
     break;
   case WRITE:
-    rc = sqlite3_open_v2(db_path, db, SQLITE_OPEN_READWRITE, NULL);
+    rc = sqlite3_open_v2(db_path_cstr, db, SQLITE_OPEN_READWRITE, NULL);
     break;
   case READ | WRITE:
-    rc = sqlite3_open_v2(db_path, db, SQLITE_OPEN_READWRITE, NULL);
+    rc = sqlite3_open_v2(db_path_cstr, db, SQLITE_OPEN_READWRITE, NULL);
     break;
   }
 

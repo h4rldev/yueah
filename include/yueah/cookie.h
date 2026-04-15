@@ -32,7 +32,7 @@ yueah_string_t *yueah_cookie_new(h2o_mem_pool_t *pool,
  *
  * @return true if the cookie name exists, false otherwise
  */
-bool yueah_cookie_name_exists(h2o_iovec_t cookie_header,
+bool yueah_cookie_name_exists(h2o_mem_pool_t *pool, h2o_iovec_t cookie_header,
                               const yueah_string_t *cookie_name);
 
 /*

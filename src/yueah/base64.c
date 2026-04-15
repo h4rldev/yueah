@@ -1,45 +1,46 @@
-
 #include <h2o.h>
 #include <sodium.h>
 
 #include <yueah/base64.h>
 #include <yueah/log.h>
-#include <yueah/shared.h>
+#include <yueah/string.h>
+#include <yueah/types.h>
 
-char *yueah_base64_encode(h2o_mem_pool_t *pool, unsigned char *content,
-                          mem_t content_len, mem_t *out_len) {
+yueah_string_t *yueah_base64_encode(h2o_mem_pool_t *pool,
+                                    const yueah_string_t *content) {
 
-  size_t base64_len = sodium_base64_encoded_len(
-      content_len, sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
+  u64 base64_len = sodium_base64_encoded_len(
+      content->len, sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
 
-  char *base64 = h2o_mem_alloc_pool(pool, char *, base64_len);
-  char *result = sodium_bin2base64(base64, base64_len, content, content_len,
+  yueah_string_t *base64 = yueah_string_new(pool, NULL, base64_len);
+  char *result = sodium_bin2base64((char *)base64->data, base64_len * 64,
+                                   content->data, content->len,
                                    sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
 
-  if (result != base64) {
+  if (result != (char *)base64->data) {
     yueah_log_error("sodium_bin2base64 failed");
     return NULL;
   }
 
-  *out_len = base64_len - 1;
   return base64;
 }
 
-unsigned char *yueah_base64_decode(h2o_mem_pool_t *pool, char *base64,
-                                   mem_t base64_len, mem_t max_out_len,
-                                   mem_t *out_len) {
-  mem_t buf_len = 0;
-  mem_t max_len = max_out_len;
+yueah_string_t *yueah_base64_decode(h2o_mem_pool_t *pool,
+                                    const yueah_string_t *base64,
+                                    u64 max_out_len) {
   int rc = 0;
-  unsigned char *buf = h2o_mem_alloc_pool(pool, unsigned char *, buf_len);
+  u64 len = base64->len / 4 * 3;
+  u64 real_len = 0;
 
-  rc = sodium_base642bin(buf, max_len * 64, base64, base64_len, NULL, &buf_len,
-                         NULL, sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
-  if (rc != 0) {
+  yueah_string_t *buf = yueah_string_new(pool, NULL, len);
+
+  if (sodium_base642bin(buf->data, len * 64, (char *)base64->data, base64->len,
+                        NULL, &real_len, NULL,
+                        sodium_base64_VARIANT_ORIGINAL_NO_PADDING) != 0) {
     yueah_log_error("sodium_base642bin failed: code %d", rc);
     return NULL;
   }
 
-  *out_len = buf_len;
+  buf->len = real_len;
   return buf;
 }

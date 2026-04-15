@@ -4,7 +4,7 @@
 
 #include <yueah/shared.h>
 
-char *yueah_strdup(h2o_mem_pool_t *pool, const char *str, mem_t size) {
+char *yueah_strdup(h2o_mem_pool_t *pool, const char *str, u64 size) {
   char *dup = h2o_mem_alloc_pool(pool, char *, size);
   memcpy(dup, str, size);
   return dup;
@@ -21,21 +21,12 @@ void print_hex_unsigned(const char *label, const unsigned char *str,
   printf("\n");
 }
 
-void print_hex(const char *label, const char *str, size_t size) {
+void print_hex(const char *label, const yueah_string_t *str) {
   printf("%s: ", label);
   size_t i = 0;
-  while (i < size) {
-    printf("%02x ", str[i]);
+  while (i < str->len) {
+    printf("%02x ", str->data[i]);
     i++;
   }
   printf("\n");
-}
-
-char *yueah_iovec_to_str(h2o_mem_pool_t *pool, h2o_iovec_t *iovec) {
-  mem_t len = iovec->len;
-  char *str = h2o_mem_alloc_pool(pool, char *, len + 1);
-  memcpy(str, iovec->base, len);
-  str[len] = '\0';
-
-  return str;
 }
