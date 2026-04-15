@@ -1,6 +1,7 @@
 #include <h2o.h>
 #include <yyjson.h>
 
+#include <yueah/error.h>
 #include <yueah/log.h>
 #include <yueah/response.h>
 #include <yueah/string.h>
@@ -205,18 +206,21 @@ error_resp_to_json(h2o_mem_pool_t *pool, yyjson_mut_doc *doc,
 }
 
 yueah_string_array_t *yueah_parse_form_body(h2o_mem_pool_t *pool,
-                                            const yueah_string_t *input) {
-  if (!input)
+                                            const yueah_string_t *form_body,
+                                            yueah_error_t *error) {
+  if (!form_body) {
+    *error = yueah_throw_error("Form body is NULL");
     return NULL;
+  }
 
-  cstr *decoded_input = h2o_mem_alloc_pool(pool, char, input->len + 1);
-  cstr *input_cstr = yueah_string_to_cstr(pool, input);
+  cstr *decoded_input = h2o_mem_alloc_pool(pool, char, form_body->len + 1);
+  cstr *input_cstr = yueah_string_to_cstr(pool, form_body);
   yueah_urldecode(decoded_input, input_cstr);
 
   u64 array_len = 1;
   int part_idx = 0;
 
-  for (u64 i = 0; i < input->len; i++)
+  for (u64 i = 0; i < form_body->len; i++)
     if (decoded_input[i] == '&')
       array_len = array_len + 2;
 
@@ -238,14 +242,23 @@ yueah_string_array_t *yueah_parse_form_body(h2o_mem_pool_t *pool,
   string_array->strings = res;
   string_array->len = array_len;
 
+  *error = yueah_success(NULL);
   return string_array;
 }
 
 yueah_string_t *yueah_get_form_val(h2o_mem_pool_t *pool,
                                    const yueah_string_t *key,
-                                   const yueah_string_array_t *form_data) {
-  if (!key || !form_data)
+                                   const yueah_string_array_t *form_data,
+                                   yueah_error_t *error) {
+  if (!key) {
+    *error = yueah_throw_error("Key is NULL");
     return NULL;
+  }
+
+  if (!form_data) {
+    *error = yueah_throw_error("Form data is NULL");
+    return NULL;
+  }
 
   u64 key_idx = 0;
   u64 key_len = 0;

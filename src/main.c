@@ -1,32 +1,13 @@
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/stat.h>
-#include <time.h>
-#include <unistd.h>
-
 #include <h2o.h>
-#include <h2o/file.h>
-#include <h2o/http1.h>
-#include <h2o/http2.h>
-#include <h2o/memcached.h>
 #include <sodium.h>
 #include <sqlite3.h>
 
 #include <dotenv.h>
 #include <yueah/cli.h>
 #include <yueah/config.h>
-#include <yueah/cookie.h>
-#include <yueah/db.h>
+#include <yueah/error.h>
 #include <yueah/file.h>
-#include <yueah/jwt.h>
 #include <yueah/log.h>
-#include <yueah/meta.h>
-#include <yueah/shared.h>
 #include <yueah/string.h>
 #include <yueah/types.h>
 
@@ -151,9 +132,21 @@ int main(int argc, char **argv) {
   h2o_hostconf_t *hostconf = NULL;
   h2o_pathconf_t *pathconf = NULL;
 
-  if (read_config(pool, &yueah_config, NULL) != 0) {
-    init_config(pool, &yueah_config);
-    write_config(pool, yueah_config, NULL);
+  yueah_error_t error = read_config(pool, &yueah_config, NULL);
+  if (error.status != OK) {
+    yueah_print_error(error);
+
+    error = init_config(pool, &yueah_config);
+    if (error.status != OK) {
+      yueah_print_error(error);
+      goto Error;
+    }
+
+    error = write_config(pool, yueah_config, NULL);
+    if (error.status != OK) {
+      yueah_print_error(error);
+      goto Error;
+    }
   }
 
   yueah_log_fname = h2o_mem_alloc_pool(pool, char, 1024);
@@ -191,10 +184,12 @@ int main(int argc, char **argv) {
 
   signal(SIGPIPE, SIG_IGN);
 
-  if (parse_args(argc, argv, &yueah_config) != 0) {
+  error = parse_args(argc, argv, &yueah_config);
+  if (error.status != OK) {
     yueah_log(Error, true,
               "yueah: failed parsing args, something is very wrong..\n");
-    return -1;
+    yueah_print_error(error);
+    goto Error;
   }
 
   h2o_config_init(&config);

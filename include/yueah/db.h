@@ -13,18 +13,21 @@
  * @param db The database pointer
  * @param flags The flags to use when connecting to the database
  *
- * @return 0 on success
+ * @return a yueah_error_t containing status.OK if no issues happened, else a
+ * populated error
  */
-int yueah_db_connect(h2o_mem_pool_t *pool, const yueah_string_t *db_path,
-                     sqlite3 **db, int flags);
+yueah_error_t yueah_db_connect(h2o_mem_pool_t *pool,
+                               const yueah_string_t *db_path, sqlite3 **db,
+                               int flags);
 
 /*
  * @brief Disconnect from a database
  *
  * @param db The database pointer
  *
- * @return 0 on success
+ * @return a yueah_error_t containing status.OK if no issues happened, else a
+ * populated error
  */
-int yueah_db_disconnect(sqlite3 *db);
+yueah_error_t yueah_db_disconnect(sqlite3 *db);
 
 #endif // !YUEAH_DB_H

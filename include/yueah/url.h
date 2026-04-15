@@ -6,6 +6,9 @@
 /*
  * @brief Decode a url encoded cstring
  *
+ * @note This function doesn't populate a yueah_error_t, so if something goes
+ * wrong, you'll have to troubleshoot yourself.
+ *
  * @param dst The destination to write the decoded string to
  * @param src The source to decode
  */

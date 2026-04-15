@@ -20,10 +20,45 @@
 #define COLOR_CYAN ""
 #endif
 
-int __register_logger_fd(FILE *fd);
-int __register_logger_path(char *path);
+/*
+ * @brief Register a logger to a file descriptor
+ *
+ * @param fd The file descriptor to register
+ *
+ * @return yueah_error_t containing status.OK if no issues happened, else a
+ * populated error
+ */
+yueah_error_t __register_logger_fd(FILE *fd);
 
+/*
+ * @brief Register a logger to a file path
+ *
+ * @param path The path to register
+ *
+ * @return yueah_error_t containing status.OK if no issues happened, else a
+ * populated error
+ */
+yueah_error_t __register_logger_path(char *path);
+
+/*
+ * @brief Log a message
+ *
+ * @param level The log level to log at
+ * @param time Whether to include the current time
+ * @param fmt The format string
+ * @param ... The arguments for the format string
+ */
 void yueah_log(log_level_t level, bool time, const char *fmt, ...);
+
+/*
+ * @brief Log a message within a specifc byte amount
+ *
+ * @param level The log level to log at
+ * @param time Whether to include the current time
+ * @param bytes The amount of bytes to log
+ * @param fmt The format string
+ * @param ... The arguments for the format string
+ */
 void yueah_log_bytes(log_level_t level, bool time, u64 bytes, const char *fmt,
                      ...);
 

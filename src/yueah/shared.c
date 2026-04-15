@@ -4,12 +4,6 @@
 
 #include <yueah/shared.h>
 
-char *yueah_strdup(h2o_mem_pool_t *pool, const char *str, u64 size) {
-  char *dup = h2o_mem_alloc_pool(pool, char *, size);
-  memcpy(dup, str, size);
-  return dup;
-}
-
 void print_hex_unsigned(const char *label, const unsigned char *str,
                         size_t size) {
   printf("%s: ", label);

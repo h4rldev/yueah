@@ -8,6 +8,9 @@
 /*
  * @brief Create a new string.
  *
+ * @note This function doesn't populate a yueah_error_t, so if something goes
+ * wrong, you'll have to troubleshoot yourself.
+ *
  * @param pool The memory pool to allocate the string from.
  * @param str The string to copy into the new string (CAN BE NULL).
  * @param size The size of the string.
@@ -20,6 +23,9 @@ yueah_string_t *yueah_string_new(h2o_mem_pool_t *pool, const cstr_nullable *str,
 /*
  * @brief Convert string to cstr.
  *
+ * @note This function doesn't populate a yueah_error_t, so if something goes
+ * wrong, you'll have to troubleshoot yourself.
+ *
  * @param pool The memory pool to allocate the cstr from.
  * @param str The string to convert.
  *
@@ -29,6 +35,9 @@ cstr *yueah_string_to_cstr(h2o_mem_pool_t *pool, const yueah_string_t *str);
 
 /*
  * @brief Convert from iovec to string.
+ *
+ * @note This function doesn't populate a yueah_error_t, so if something goes
+ * wrong, you'll have to troubleshoot yourself.
  *
  * @param pool The memory pool to allocate the string from.
  * @param iovec The iovec to convert.
@@ -41,6 +50,9 @@ yueah_string_t *yueah_string_from_iovec(h2o_mem_pool_t *pool,
 /*
  * @brief Convert from string to iovec.
  *
+ * @note This function doesn't populate a yueah_error_t, so if something goes
+ * wrong, you'll have to troubleshoot yourself.
+ *
  * @param pool The memory pool to allocate the iovec from.
  * @param str The string to convert.
  *
@@ -52,12 +64,18 @@ h2o_iovec_t *yueah_string_to_iovec(h2o_mem_pool_t *pool,
 /*
  * @brief Convert all characters in a yueah_string_t to lowercase.
  *
+ * @note This function doesn't populate a yueah_error_t, so if something goes
+ * wrong, you'll have to troubleshoot yourself.
+ *
  * @param str The string to convert.
  */
 void yueah_string_lower(yueah_string_t *str);
 
 /*
  * @brief Convert all characters in a yueah_string_t to uppercase.
+ *
+ * @note This function doesn't populate a yueah_error_t, so if something goes
+ * wrong, you'll have to troubleshoot yourself.
  *
  * @param str The string to convert.
  */

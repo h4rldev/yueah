@@ -4,24 +4,25 @@
 #include <string.h>
 #include <time.h>
 
+#include <yueah/error.h>
 #include <yueah/log.h>
 #include <yueah/types.h>
 
 static state_console_target_t state_console_target = {NULL, NULL};
 
-int __register_logger_fd(FILE *fd) {
+yueah_error_t __register_logger_fd(FILE *fd) {
   if (!fd)
-    return -1;
+    return yueah_throw_error("File descriptor is NULL");
 
   state_console_target.fd = fd;
-  return 0;
+  return yueah_success(NULL);
 }
-int __register_logger_path(char *path) {
+yueah_error_t __register_logger_path(char *path) {
   if (!path)
-    return -1;
+    return yueah_throw_error("Path is NULL");
 
   state_console_target.path = path;
-  return 0;
+  return yueah_success(NULL);
 }
 
 static char *get_time(void) {

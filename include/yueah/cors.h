@@ -14,20 +14,25 @@
  * @param config Configuration struct for CORS headers (usually gotten through
  * req handler)
  *
- * @return 0 on success
+ * @return yueah_error_t containing status.OK if no issues happened, else a
+ * populated error
  */
-int yueah_add_cors_headers(h2o_req_t *req, const yueah_cors_config_t *config);
+yueah_error_t yueah_add_cors_headers(h2o_req_t *req,
+                                     const yueah_cors_config_t *config);
 
 /*
- * Handles OPTIONS requests for CORS
+ * @brief Handles OPTIONS requests for CORS
  *
  * @note This function is meant to be returned when a handler recieves an
  * OPTIONS request
  *
+ * @note This function doesn't populate an error, so if something goes wrong,
+ * you have to troubleshoot yourself
+ *
  * @param handler The h2o handler for the OPTIONS request
  * @param req The h2o request for the OPTIONS request
  *
- * @return 0 on success.
+ * @return 0 on success (should be infallible)
  */
 int yueah_handle_options(h2o_req_t *req, const yueah_cors_config_t *config);
 

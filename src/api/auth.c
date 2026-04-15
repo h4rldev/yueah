@@ -1,5 +1,3 @@
-#include "h2o/header.h"
-#include "h2o/memory.h"
 #include <string.h>
 
 #include <h2o.h>
@@ -11,11 +9,10 @@
 #include <yueah/hash.h>
 #include <yueah/jwt.h>
 #include <yueah/log.h>
-#include <yueah/shared.h>
+#include <yueah/types.h>
 #include <yueah/uuid.h>
 
 #include <api/auth.h>
-#include <api/utils.h>
 
 typedef enum {
   Poster,

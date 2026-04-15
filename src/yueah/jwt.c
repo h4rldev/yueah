@@ -7,18 +7,17 @@
 #include <yyjson.h>
 
 #include <yueah/base64.h>
+#include <yueah/error.h>
 #include <yueah/file.h>
 #include <yueah/jwt.h>
 #include <yueah/log.h>
 #include <yueah/string.h>
 #include <yueah/types.h>
 
-static int yueah_generate_jwt_key(h2o_mem_pool_t *pool,
-                                  const yueah_string_t *key_path) {
-  if (!key_path) {
-    yueah_log_error("Invalid key path");
-    return -1;
-  }
+static yueah_error_t yueah_generate_jwt_key(h2o_mem_pool_t *pool,
+                                            const yueah_string_t *key_path) {
+  if (!key_path)
+    return yueah_throw_error("Key path is NULL");
 
   FILE *key_file;
 
@@ -30,10 +29,8 @@ static int yueah_generate_jwt_key(h2o_mem_pool_t *pool,
 
   crypto_auth_hmacsha512_keygen(key);
   cstr *hex_key_str = sodium_bin2hex(hex_key, hex_key_len, key, key_len);
-  if (!hex_key_str) {
-    yueah_log_error("Failed to make key hex");
-    return -1;
-  }
+  if (!hex_key_str)
+    return yueah_throw_error("Failed to make key hex");
 
   cstr *key_path_cstr = yueah_string_to_cstr(pool, key_path);
   key_file = fopen(key_path_cstr, "w");
@@ -43,39 +40,41 @@ static int yueah_generate_jwt_key(h2o_mem_pool_t *pool,
          key_file);
   fclose(key_file);
 
-  return 0;
+  return yueah_success(NULL);
 }
 
-static int yueah_generate_access_jwt_key(h2o_mem_pool_t *pool) {
+static yueah_error_t yueah_generate_access_jwt_key(h2o_mem_pool_t *pool) {
   return yueah_generate_jwt_key(pool, YUEAH_STR("access_jwt_key.txt"));
 }
 
-static int yueah_generate_refresh_jwt_key(h2o_mem_pool_t *pool) {
+static yueah_error_t yueah_generate_refresh_jwt_key(h2o_mem_pool_t *pool) {
   return yueah_generate_jwt_key(pool, YUEAH_STR("refresh_jwt_key.txt"));
 }
 
 static yueah_string_t *yueah_get_jwt_key(h2o_mem_pool_t *pool,
-                                         yueah_jwt_key_type_t key_type) {
-  cstr key_path[1024];
-  cstr key_var[1024];
+                                         yueah_jwt_key_type_t key_type,
+                                         yueah_error_t *error) {
+  yueah_string_t *key_path = {0};
+  yueah_string_t *key_var = {0};
+  yueah_error_t key_error = yueah_success(NULL);
 
   switch (key_type) {
   case Access:
     yueah_log_debug("Using access key");
-    strlcpy(key_var, "YUEAH_ACCESS_JWT_KEY", sizeof(key_var));
-    strlcpy(key_path, "access_jwt_key.txt", sizeof(key_path));
+    key_var = YUEAH_STR("YUEAH_ACCESS_JWT_KEY");
+    key_path = YUEAH_STR("access_jwt_key.txt");
     break;
   case Refresh:
     yueah_log_debug("Using refresh key");
-    strlcpy(key_var, "YUEAH_REFRESH_JWT_KEY", sizeof(key_var));
-    strlcpy(key_path, "refresh_jwt_key.txt", sizeof(key_path));
+    key_var = YUEAH_STR("YUEAH_REFRESH_JWT_KEY");
+    key_path = YUEAH_STR("refresh_jwt_key.txt");
     break;
   default:
-    yueah_log_error("Invalid key type");
+    *error = yueah_throw_error("Invalid key type");
     return NULL;
   }
 
-  const cstr *key = getenv(key_var);
+  const yueah_string_t *key = yueah_getenv(pool, key_var, &key_error);
   int rc = 0;
   u64 key_len = 0;
   static unsigned char key_buf[crypto_auth_hmacsha512_KEYBYTES];
@@ -91,19 +90,20 @@ static yueah_string_t *yueah_get_jwt_key(h2o_mem_pool_t *pool,
       yueah_generate_refresh_jwt_key(pool);
       break;
     default:
-      yueah_log_error("Invalid key type");
-      break;
+      *error = yueah_throw_error("Invalid key type");
+      return NULL;
     }
+    *error = yueah_throw_error("Invalid key, but generated a new one.");
     return NULL;
   }
 
   cstr hex_key_end[64];
-
-  rc = sodium_hex2bin(key_buf, crypto_auth_hmacsha512_KEYBYTES, key,
-                      strlen(key), NULL, &key_len, (const char **)&hex_key_end);
+  rc = sodium_hex2bin(key_buf, crypto_auth_hmacsha512_KEYBYTES,
+                      (cstr *)key->data, key->len, NULL, &key_len,
+                      (const char **)&hex_key_end);
   if (rc != 0) {
-    yueah_log_error("Failed to decode hex_key: code %d, hex_end %02x", rc,
-                    hex_key_end);
+    *error = yueah_throw_error(
+        "Failed to decode hex_key: code %d, hex_end %02x", rc, hex_key_end);
     return NULL;
   }
 
@@ -121,9 +121,11 @@ static yueah_string_t *yueah_get_jwt_key(h2o_mem_pool_t *pool,
       yueah_log_error("Invalid key type");
       break;
     }
+    *error = yueah_throw_error("Invalid key, but generated a new one.");
     return NULL;
   }
 
+  *error = yueah_success(NULL);
   return yueah_string_new(pool, (cstr *)key_buf, key_len);
 }
 
@@ -136,8 +138,8 @@ static yueah_jwt_header_t *yueah_jwt_create_header(h2o_mem_pool_t *pool) {
 }
 
 static yueah_string_t *
-yueah_jwt_header_to_json(h2o_mem_pool_t *pool,
-                         const yueah_jwt_header_t *header) {
+yueah_jwt_header_to_json(h2o_mem_pool_t *pool, const yueah_jwt_header_t *header,
+                         yueah_error_t *error) {
   cstr *header_json = NULL;
 
   u64 header_json_len = 0;
@@ -165,33 +167,40 @@ yueah_jwt_header_to_json(h2o_mem_pool_t *pool,
   header_json =
       yyjson_mut_write_opts(doc, YYJSON_WRITE_NOFLAG, NULL, NULL, &err);
   if (!header_json) {
-    yueah_log_error("Error writing json: %d:%s", err.code, err.msg);
+    *error = yueah_throw_error("Error writing json: %d:%s", err.code, err.msg);
     return NULL;
   }
 
+  *error = yueah_success(NULL);
   return yueah_string_new(pool, header_json, header_json_len);
 }
 
 static yueah_string_t *yueah_jwt_encode_header(h2o_mem_pool_t *pool,
-                                               yueah_jwt_header_t *header) {
+                                               yueah_jwt_header_t *header,
+                                               yueah_error_t *error) {
+  yueah_error_t header_error = yueah_success(NULL);
+
   yueah_string_t *encoded_header = NULL;
   yueah_string_t *header_json = NULL;
-  header_json = yueah_jwt_header_to_json(pool, header);
+
+  header_json = yueah_jwt_header_to_json(pool, header, &header_error);
   if (!header_json) {
-    yueah_log_error("Error encoding header");
+    *error = header_error;
     return NULL;
   }
 
-  encoded_header = yueah_base64_encode(pool, header_json);
+  encoded_header = yueah_base64_encode(pool, header_json, &header_error);
   if (!encoded_header) {
-    yueah_log_error("Error encoding header");
+    *error = header_error;
     return NULL;
   }
 
+  *error = yueah_success(NULL);
   return encoded_header;
 }
 
-static yueah_string_t *yueah_generate_jti(h2o_mem_pool_t *pool) {
+static yueah_string_t *yueah_generate_jti(h2o_mem_pool_t *pool,
+                                          yueah_error_t *error) {
   u64 bin_len = 32 / 2;
   ucstr random_bytes[bin_len];
   cstr jti_hex[bin_len * 2 + 1];
@@ -200,22 +209,23 @@ static yueah_string_t *yueah_generate_jti(h2o_mem_pool_t *pool) {
   cstr *jti_hex_str =
       sodium_bin2hex(jti_hex, bin_len * 2 + 1, random_bytes, bin_len);
   if (!jti_hex_str) {
-    yueah_log_error("Failed to make jti hex");
+    *error = yueah_throw_error("Failed to make jti hex");
     return NULL;
   }
 
   cstr *jti = h2o_mem_alloc_pool(pool, char, bin_len * 2 + 1);
   memcpy(jti, jti_hex, bin_len * 2 + 1);
 
+  *error = yueah_success(NULL);
   return yueah_string_new(pool, jti, bin_len * 2 + 1);
 }
 
-yueah_jwt_claims_t *yueah_jwt_create_claims(h2o_mem_pool_t *pool,
-                                            const yueah_string_t *iss,
-                                            const yueah_string_t *sub,
-                                            const yueah_string_t *aud,
-                                            const u64 exp, const u64 nbf) {
+yueah_jwt_claims_t *
+yueah_jwt_create_claims(h2o_mem_pool_t *pool, const yueah_string_t *iss,
+                        const yueah_string_t *sub, const yueah_string_t *aud,
+                        const u64 exp, const u64 nbf, yueah_error_t *error) {
   yueah_jwt_claims_t *claims = h2o_mem_alloc_pool(pool, yueah_jwt_claims_t, 1);
+  yueah_error_t claim_error = yueah_success(NULL);
 
   time_t now = time(NULL);
   u64 exp_time = now + exp;
@@ -227,14 +237,20 @@ yueah_jwt_claims_t *yueah_jwt_create_claims(h2o_mem_pool_t *pool,
   claims->aud = aud;
   claims->iat = iat_time;
   claims->exp = exp_time;
-  claims->jti = yueah_generate_jti(pool);
   claims->nbf = nbf_time;
+  claims->jti = yueah_generate_jti(pool, &claim_error);
+  if (claim_error.status != OK) {
+    *error = claim_error;
+    return NULL;
+  }
 
+  *error = yueah_success(NULL);
   return claims;
 }
 
 static yueah_string_t *yueah_payload_to_json(h2o_mem_pool_t *pool,
-                                             const yueah_jwt_claims_t *claims) {
+                                             const yueah_jwt_claims_t *claims,
+                                             yueah_error_t *error) {
   cstr *payload_json = NULL;
 
   u64 payload_json_len = 0;
@@ -287,24 +303,24 @@ static yueah_string_t *yueah_payload_to_json(h2o_mem_pool_t *pool,
       yyjson_mut_write_opts(doc, YYJSON_WRITE_NOFLAG, NULL, NULL, &err);
 
   if (!payload_json) {
-    yueah_log_error("Error writing json: %d:%s", err.code, err.msg);
+    *error = yueah_throw_error("Error writing json: %d:%s", err.code, err.msg);
     return NULL;
   }
 
+  *error = yueah_success(NULL);
   return yueah_string_new(pool, payload_json, payload_json_len);
 }
 
-static yueah_string_t *
-yueah_jwt_create_signature_from_str(h2o_mem_pool_t *pool,
-                                    const yueah_string_t *key,
-                                    const yueah_string_t *body) {
+static yueah_string_t *yueah_jwt_create_signature_from_str(
+    h2o_mem_pool_t *pool, const yueah_string_t *key, const yueah_string_t *body,
+    yueah_error_t *error) {
   int rc = 0;
   ucstr *signature = NULL;
   ucstr hash[crypto_auth_hmacsha512_BYTES];
 
   ucstr *key_cstr = (ucstr *)yueah_string_to_cstr(pool, key);
   if (crypto_auth_hmacsha512(hash, body->data, body->len, key_cstr) != 0) {
-    yueah_log_error("Failed to hash hmac, return code %d", rc);
+    *error = yueah_throw_error("Failed to hash hmac, return code %d", rc);
     return NULL;
   }
 
@@ -312,6 +328,7 @@ yueah_jwt_create_signature_from_str(h2o_mem_pool_t *pool,
       h2o_mem_alloc_pool(pool, unsigned char, crypto_auth_hmacsha512_BYTES);
   memcpy(signature, hash, crypto_auth_hmacsha512_BYTES);
 
+  *error = yueah_success(NULL);
   return yueah_string_new(pool, (cstr *)signature,
                           crypto_auth_hmacsha512_BYTES);
 }
@@ -319,12 +336,25 @@ yueah_jwt_create_signature_from_str(h2o_mem_pool_t *pool,
 static yueah_string_t *
 yueah_jwt_create_signature(h2o_mem_pool_t *pool, const yueah_string_t *key,
                            const yueah_jwt_claims_t *claims,
-                           const yueah_jwt_header_t *header) {
+                           const yueah_jwt_header_t *header,
+                           yueah_error_t *error) {
 
   u64 concat_len = 0;
+  yueah_error_t signature_error = yueah_success(NULL);
 
-  yueah_string_t *header_json = yueah_jwt_header_to_json(pool, header);
-  yueah_string_t *payload_json = yueah_payload_to_json(pool, claims);
+  yueah_string_t *header_json =
+      yueah_jwt_header_to_json(pool, header, &signature_error);
+  if (!header_json) {
+    *error = signature_error;
+    return NULL;
+  }
+
+  yueah_string_t *payload_json =
+      yueah_payload_to_json(pool, claims, &signature_error);
+  if (!payload_json) {
+    *error = signature_error;
+    return NULL;
+  }
 
   concat_len = header_json->len + payload_json->len + 1;
 
@@ -334,57 +364,95 @@ yueah_jwt_create_signature(h2o_mem_pool_t *pool, const yueah_string_t *key,
   memcpy(concat->data + header_json->len + 1, payload_json->data,
          payload_json->len);
 
-  return yueah_jwt_create_signature_from_str(pool, key, concat);
+  *error = yueah_success(NULL);
+  return yueah_jwt_create_signature_from_str(pool, key, concat, error);
 }
 
 static yueah_string_t *
 yueah_jwt_encode_signature(h2o_mem_pool_t *pool, const yueah_string_t *key,
                            const yueah_jwt_claims_t *claims,
-                           const yueah_jwt_header_t *header) {
+                           const yueah_jwt_header_t *header,
+                           yueah_error_t *error) {
+  yueah_error_t signature_error = yueah_success(NULL);
   yueah_string_t *encoded_signature = NULL;
-  yueah_string_t *signature =
-      yueah_jwt_create_signature(pool, key, claims, header);
 
-  encoded_signature = yueah_base64_encode(pool, signature);
-  if (!encoded_signature || encoded_signature->len < 10) {
-    yueah_log_error("Failed to encode signature");
+  yueah_string_t *signature =
+      yueah_jwt_create_signature(pool, key, claims, header, &signature_error);
+  if (signature_error.status != OK) {
+    *error = signature_error;
     return NULL;
   }
 
+  encoded_signature = yueah_base64_encode(pool, signature, &signature_error);
+  if (!encoded_signature || encoded_signature->len < 10) {
+    *error = signature_error;
+    return NULL;
+  }
+
+  *error = yueah_success(NULL);
   return encoded_signature;
 }
 
 static yueah_string_t *
 yueah_jwt_encode_payload(h2o_mem_pool_t *pool, const yueah_string_t *key,
-                         const yueah_jwt_claims_t *payload) {
-  yueah_string_t *json_payload = yueah_payload_to_json(pool, payload);
-  yueah_string_t *encoded_payload = NULL;
-
-  encoded_payload = yueah_base64_encode(pool, json_payload);
-  if (!encoded_payload || encoded_payload->len < 10) {
-    yueah_log_error("Failed to encode payload");
+                         const yueah_jwt_claims_t *payload,
+                         yueah_error_t *error) {
+  yueah_error_t payload_error = yueah_success(NULL);
+  yueah_string_t *json_payload =
+      yueah_payload_to_json(pool, payload, &payload_error);
+  if (!json_payload) {
+    *error = payload_error;
     return NULL;
   }
 
+  yueah_string_t *encoded_payload = NULL;
+  encoded_payload = yueah_base64_encode(pool, json_payload, &payload_error);
+  if (!encoded_payload || encoded_payload->len < 10) {
+    *error = payload_error;
+    return NULL;
+  }
+
+  *error = yueah_success(NULL);
   return encoded_payload;
 }
 
 yueah_string_t *yueah_jwt_encode(h2o_mem_pool_t *pool,
                                  const yueah_jwt_claims_t *payload,
-                                 yueah_jwt_key_type_t key_type) {
-  const yueah_string_t *key = yueah_get_jwt_key(pool, key_type);
-  if (!key)
+                                 yueah_jwt_key_type_t key_type,
+                                 yueah_error_t *error) {
+  yueah_error_t jwt_error = yueah_success(NULL);
+
+  const yueah_string_t *key = yueah_get_jwt_key(pool, key_type, &jwt_error);
+  if (!key) {
+    *error = jwt_error;
     return NULL;
+  }
 
   yueah_jwt_header_t *header = yueah_jwt_create_header(pool);
   const yueah_jwt_claims_t *claims = payload;
 
   u64 concat_len = 0;
 
-  yueah_string_t *encoded_header = yueah_jwt_encode_header(pool, header);
-  yueah_string_t *encoded_payload = yueah_jwt_encode_payload(pool, key, claims);
+  yueah_string_t *encoded_header =
+      yueah_jwt_encode_header(pool, header, &jwt_error);
+  if (!encoded_header) {
+    *error = jwt_error;
+    return NULL;
+  }
+
+  yueah_string_t *encoded_payload =
+      yueah_jwt_encode_payload(pool, key, claims, &jwt_error);
+  if (!encoded_payload) {
+    *error = jwt_error;
+    return NULL;
+  }
+
   yueah_string_t *encoded_signature =
-      yueah_jwt_encode_signature(pool, key, claims, header);
+      yueah_jwt_encode_signature(pool, key, claims, header, &jwt_error);
+  if (!encoded_signature) {
+    *error = jwt_error;
+    return NULL;
+  }
 
   concat_len =
       encoded_header->len + encoded_payload->len + encoded_signature->len + 2;
@@ -398,15 +466,20 @@ yueah_string_t *yueah_jwt_encode(h2o_mem_pool_t *pool,
   memcpy(concat->data + encoded_header->len + 1 + encoded_payload->len + 1,
          encoded_signature->data, encoded_signature->len);
 
+  *error = yueah_success(NULL);
   return concat;
 }
 
 bool yueah_jwt_verify(h2o_mem_pool_t *pool, const yueah_string_t *token,
-                      const yueah_string_t *aud,
-                      yueah_jwt_key_type_t key_type) {
-  yueah_string_t *key = yueah_get_jwt_key(pool, key_type);
-  if (!key)
+                      const yueah_string_t *aud, yueah_jwt_key_type_t key_type,
+                      yueah_error_t *error) {
+  yueah_error_t jwt_error = yueah_success(NULL);
+
+  yueah_string_t *key = yueah_get_jwt_key(pool, key_type, &jwt_error);
+  if (!key) {
+    *error = jwt_error;
     return false;
+  }
 
   u64 header_len = 0;
   u64 payload_len = 0;
@@ -438,8 +511,17 @@ bool yueah_jwt_verify(h2o_mem_pool_t *pool, const yueah_string_t *token,
   header = yueah_string_new(pool, header_cstr, header_len);
   payload = yueah_string_new(pool, payload_cstr, payload_len);
 
-  header_json = yueah_base64_decode(pool, header, header_len);
-  payload_json = yueah_base64_decode(pool, payload, payload_len);
+  header_json = yueah_base64_decode(pool, header, header_len, &jwt_error);
+  if (!header_json) {
+    *error = jwt_error;
+    return false;
+  }
+
+  payload_json = yueah_base64_decode(pool, payload, payload_len, &jwt_error);
+  if (!payload_json) {
+    *error = jwt_error;
+    return false;
+  }
 
   concat =
       yueah_string_new(pool, NULL, header_json->len + payload_json->len + 1);
@@ -450,20 +532,35 @@ bool yueah_jwt_verify(h2o_mem_pool_t *pool, const yueah_string_t *token,
          payload_json->len);
 
   yueah_string_t *generated_signature =
-      yueah_jwt_create_signature_from_str(pool, key, concat);
+      yueah_jwt_create_signature_from_str(pool, key, concat, &jwt_error);
+  if (!generated_signature) {
+    *error = jwt_error;
+    return false;
+  }
 
   decoded_signature = yueah_base64_decode(
-      pool, signature, signature_len + crypto_auth_hmacsha512_BYTES);
+      pool, signature, signature_len + crypto_auth_hmacsha512_BYTES,
+      &jwt_error);
+  if (!decoded_signature) {
+    *error = jwt_error;
+    return false;
+  }
 
   if (sodium_memcmp(generated_signature->data, decoded_signature->data,
-                    decoded_signature->len) != 0)
+                    decoded_signature->len) != 0) {
+    *error = yueah_throw_error("Failed to verify signature");
     return false;
+  }
 
+  *error = yueah_success(NULL);
   return true;
 }
 
 yueah_string_t *yueah_jwt_get_sub(h2o_mem_pool_t *pool,
-                                  const yueah_string_t *token) {
+                                  const yueah_string_t *token,
+                                  yueah_error_t *error) {
+  yueah_error_t sub_error = yueah_success(NULL);
+
   time_t now_local = time(NULL);
   struct tm *time_buf = localtime(&now_local);
   time_t now = timegm(time_buf);
@@ -481,9 +578,6 @@ yueah_string_t *yueah_jwt_get_sub(h2o_mem_pool_t *pool,
   yyjson_val *jti_val = NULL;
   yyjson_val *nbf_val = NULL;
 
-  u64 header_len = 0;
-  u64 payload_len = 0;
-
   cstr header_cstr[1024] = {0};
   cstr payload_cstr[2048] = {0};
   yueah_string_t *payload = {0};
@@ -493,25 +587,19 @@ yueah_string_t *yueah_jwt_get_sub(h2o_mem_pool_t *pool,
 
   cstr *token_cstr = yueah_string_to_cstr(pool, token);
 
-  header_len = strchr(token_cstr, '.') - token_cstr;
-  payload_len =
-      strchr(token_cstr + header_len + 1, '.') - token_cstr - header_len - 1;
-
   sscanf(token_cstr, "%[^.].%[^.].%s", header_cstr, payload_cstr,
          signature_cstr);
 
-  payload_json = yueah_base64_decode(pool, payload, payload_len);
-
-  payload_json = yueah_base64_decode(pool, payload, 2048);
+  payload_json = yueah_base64_decode(pool, payload, 2048, &sub_error);
   if (!payload_json || payload_json->len < 10) {
-    yueah_log_error("Failed to decode payload");
+    *error = sub_error;
     return NULL;
   }
 
   doc = yyjson_read_opts((char *)payload_json->data, payload_json->len,
                          YYJSON_READ_NOFLAG, NULL, &err);
   if (!doc) {
-    yueah_log_error("Error parsing json: %d:%s", err.code, err.msg);
+    *error = yueah_throw_error("Error parsing json: %d:%s", err.code, err.msg);
     return NULL;
   }
 
@@ -526,57 +614,57 @@ yueah_string_t *yueah_jwt_get_sub(h2o_mem_pool_t *pool,
   nbf_val = yyjson_obj_get(root, "nbf");
 
   if (!iss_val || !yyjson_is_str(iss_val)) {
-    yueah_log_error("Failed to get iss");
+    *error = yueah_throw_error("Failed to get iss");
     return NULL;
   }
 
   if (!sub_val || !yyjson_is_str(sub_val)) {
-    yueah_log_error("Failed to get sub");
+    *error = yueah_throw_error("Failed to get sub");
     return NULL;
   }
 
   if (!aud_val || !yyjson_is_str(aud_val)) {
-    yueah_log_error("Failed to get aud");
+    *error = yueah_throw_error("Failed to get aud");
     return NULL;
   }
 
   if (!iat_val || !yyjson_is_uint(iat_val)) {
-    yueah_log_error("Failed to get iat");
+    *error = yueah_throw_error("Failed to get iat");
     return NULL;
   }
 
   if (!exp_val || !yyjson_is_uint(exp_val)) {
-    yueah_log_error("Failed to get exp");
+    *error = yueah_throw_error("Failed to get exp");
     return NULL;
   }
 
   if (!jti_val || !yyjson_is_str(jti_val)) {
-    yueah_log_error("Failed to get jti");
+    *error = yueah_throw_error("Failed to get jti");
     return NULL;
   }
 
   if (!nbf_val || !yyjson_is_uint(nbf_val)) {
-    yueah_log_error("Failed to get nbf");
+    *error = yueah_throw_error("Failed to get nbf");
     return NULL;
   }
 
   if (strcasecmp(yyjson_get_str(iss_val), "yueah") != 0) {
-    yueah_log_error("Invalid iss");
+    *error = yueah_throw_error("Invalid iss");
     return NULL;
   }
 
   if (strcasecmp(yyjson_get_str(aud_val), "blog") != 0) {
-    yueah_log_error("Invalid aud");
+    *error = yueah_throw_error("Invalid aud");
     return NULL;
   }
 
-  if ((long)yyjson_get_uint(exp_val) < now) {
-    yueah_log_error("Token expired");
+  if ((time_t)yyjson_get_uint(exp_val) < now) {
+    *error = yueah_throw_error("Token expired");
     return NULL;
   }
 
-  if ((long)yyjson_get_uint(nbf_val) > now) {
-    yueah_log_error("Token not valid yet");
+  if ((time_t)yyjson_get_uint(nbf_val) > now) {
+    *error = yueah_throw_error("Token not valid yet");
     return NULL;
   }
 
@@ -584,9 +672,10 @@ yueah_string_t *yueah_jwt_get_sub(h2o_mem_pool_t *pool,
   yueah_string_t *sub =
       yueah_string_new(pool, yyjson_get_str(sub_val), sub_val_len);
   if (sub == NULL || sub_val_len < 10) {
-    yueah_log_error("Failed to get sub");
+    *error = yueah_throw_error("Failed to get sub");
     return NULL;
   }
 
+  *error = yueah_success(NULL);
   return sub;
 }

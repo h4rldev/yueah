@@ -4,6 +4,7 @@
 #include <stdbool.h>
 
 #include <yueah/config.h>
+#include <yueah/types.h>
 
 /*
  * @brief Parse the command line arguments
@@ -12,8 +13,10 @@
  * @param argv The argument vector
  * @param[out] populated_args The populated arguments
  *
- * @return 0 on success
+ * @return yueah_error_t containing status.OK if no issues happened, else a
+ * populated error
  */
-int parse_args(int argc, char **argv, yueah_config_t **populated_args);
+yueah_error_t parse_args(int argc, char **argv,
+                         yueah_config_t **populated_args);
 
 #endif // !YUEAH_CLI_H

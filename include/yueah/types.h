@@ -49,6 +49,35 @@ typedef struct {
 typedef yueah_string_array_t yueah_string_array_nullable_t;
 
 /*
+ * @brief The status of an error, used to differentiate between success and
+ * error.
+ *
+ * @param OK There was no error, meaning it was successful.
+ * @param ERROR There was an error, meaning it was unsuccessful.
+ */
+typedef enum {
+  OK,
+  ERROR,
+} yueah_error_status_t;
+
+/*
+ * @brief A struct for storing an error.
+ *
+ * @param status The status of the error.
+ * @param message The message to print.
+ * @param file The file the error occurred in.
+ * @param function The function the error occurred in.
+ * @param line The line the error occurred on.
+ */
+typedef struct {
+  yueah_error_status_t status;
+  const cstr *message;
+  const cstr *file;
+  const cstr *function;
+  u64 line;
+} yueah_error_t;
+
+/*
  * @brief The configuration for CORS.
  *
  * @param allow_origin The origins that are allowed to make requests.

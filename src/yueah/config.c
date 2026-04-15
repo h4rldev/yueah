@@ -1,5 +1,4 @@
 #include <stdbool.h>
-#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -7,6 +6,7 @@
 #include <yyjson.h>
 
 #include <yueah/config.h>
+#include <yueah/error.h>
 #include <yueah/file.h>
 #include <yueah/shared.h>
 #include <yueah/string.h>
@@ -15,14 +15,13 @@
 #define DEFAULT_PATH YUEAH_STR("/config/")
 #define DEFAULT_LEVEL 6
 
-static int handle_parse_err(char *categ, char *field) {
-  fprintf(stderr,
-          "Error parsing json, something went wrong on category %s, field %s\n",
-          categ, field);
-  return -1;
+static yueah_error_t handle_parse_err(char *categ, char *field) {
+  return yueah_throw_error(
+      "Error parsing json, something went wrong on category %s, field %s",
+      categ, field);
 }
 
-int init_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
+yueah_error_t init_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
   yueah_config_t *local_config = h2o_mem_alloc_pool(pool, yueah_config_t, 1);
 
   local_config->db_path = YUEAH_STR("./yueah.db");
@@ -34,11 +33,11 @@ int init_config(h2o_mem_pool_t *pool, yueah_config_t **config) {
 
   *config = local_config;
 
-  return 0;
+  return yueah_success(NULL);
 }
 
-int write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
-                 yueah_string_nullable_t *path) {
+yueah_error_t write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
+                           yueah_string_nullable_t *path) {
   yyjson_alc alc = {0};
   yyjson_write_err err;
 
@@ -57,9 +56,10 @@ int write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
 
   default_path = DEFAULT_PATH;
 
-  cwd = get_cwd(pool);
-  if (!cwd)
-    return -1;
+  yueah_error_t error = yueah_success(NULL);
+  cwd = get_cwd(pool, &error);
+  if (!cwd || error.status != OK)
+    return error;
 
   if (!path) {
     final_path = yueah_string_new(pool, NULL,
@@ -71,15 +71,17 @@ int write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
     memcpy(final_path->data, path->data, path->len);
   }
 
-  if (!path_exist(pool, final_path))
-    if (make_dir(pool, final_path) != 0)
-      return -1;
+  if (!path_exist(pool, final_path)) {
+    error = make_dir(pool, final_path);
+    if (error.status != OK)
+      return error;
+  }
 
   memcpy(final_path->data + cwd->len + default_path->len, filename->data,
          filename->len);
 
   if (config == NULL)
-    return -1;
+    return yueah_throw_error("config is NULL");
 
   yyjson_alc_pool_init(&alc, json_buf, KiB(10));
 
@@ -108,7 +110,7 @@ int write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
     break;
   default:
     yyjson_mut_doc_free(doc);
-    return -1;
+    return yueah_throw_error("Unknown log type");
   }
 
   if (config->network->ip == NULL)
@@ -131,17 +133,17 @@ int write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
   write_res = yyjson_mut_write_file(final_path_cstr, doc,
                                     YYJSON_WRITE_PRETTY_TWO_SPACES, &alc, &err);
   if (!write_res) {
-    fprintf(stderr, "Error writing config file: %d:%s\n", err.code, err.msg);
     yyjson_mut_doc_free(doc);
-    return -1;
+    return yueah_throw_error("Error writing config file: %d:%s", err.code,
+                             err.msg);
   }
 
   yyjson_mut_doc_free(doc);
-  return 0;
+  return yueah_success(NULL);
 }
 
-int read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
-                yueah_string_nullable_t *path) {
+yueah_error_t read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
+                          yueah_string_nullable_t *path) {
   yyjson_alc alc = {0};
   yyjson_read_err err;
   char json_buf[KiB(10)] = {0};
@@ -169,10 +171,10 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
   yueah_string_t *cwd = {0};
   yueah_string_t *filename = YUEAH_STR("config.json");
 
-  cwd = get_cwd(pool);
-  if (!cwd) {
-    return -1;
-  }
+  yueah_error_t error = yueah_success(NULL);
+  cwd = get_cwd(pool, &error);
+  if (!cwd || error.status != OK)
+    return error;
 
   yyjson_alc_pool_init(&alc, json_buf, KiB(10));
 
@@ -188,23 +190,21 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
            filename->len);
 
     if (!path_exist(pool, final_path))
-      return -1;
+      return yueah_throw_error("Failed to find config file");
   } else {
     final_path = yueah_string_new(pool, NULL, path->len + filename->len);
     memcpy(final_path->data, path->data, path->len);
     memcpy(final_path->data + path->len, filename->data, filename->len);
 
     if (!path_exist(pool, final_path))
-      return -1;
+      return yueah_throw_error("Failed to find config file");
   }
 
   cstr *final_path_cstr = yueah_string_to_cstr(pool, final_path);
   doc = yyjson_read_file(final_path_cstr, YYJSON_READ_NOFLAG, &alc, &err);
-  if (!doc) {
-    fprintf(stderr, "Error parsing json at %lu: %d:%s\n", err.pos, err.code,
-            err.msg);
-    return -1;
-  }
+  if (!doc)
+    return yueah_throw_error("Error parsing json at %lu: %d:%s", err.pos,
+                             err.code, err.msg);
 
   root = yyjson_doc_get_root(doc);
 
@@ -215,36 +215,19 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
   ip_val = yyjson_obj_get(network_object, "ip");
   port_val = yyjson_obj_get(network_object, "port");
 
-  if (!root) {
-    yyjson_doc_free(doc);
-    fprintf(stderr, "Error parsing json, root is null\n");
-    return -1;
-  }
+  if (!root)
+    return yueah_throw_error("Error parsing json, root is null");
 
-  if (!db_path_val || !yyjson_is_str(db_path_val)) {
-    yyjson_doc_free(doc);
+  if (!db_path_val || !yyjson_is_str(db_path_val))
     return handle_parse_err("root", "db_path");
-  }
-
-  if (!log_type_val || !yyjson_is_str(log_type_val)) {
-    yyjson_doc_free(doc);
+  if (!log_type_val || !yyjson_is_str(log_type_val))
     return handle_parse_err("root", "log_type");
-  }
-
-  if (!network_object || !yyjson_is_obj(network_object)) {
-    yyjson_doc_free(doc);
+  if (!network_object || !yyjson_is_obj(network_object))
     return handle_parse_err("root", "network");
-  }
-
-  if (!ip_val || !yyjson_is_str(ip_val)) {
-    yyjson_doc_free(doc);
+  if (!ip_val || !yyjson_is_str(ip_val))
     return handle_parse_err("network", "ip");
-  }
-
-  if (!port_val || !yyjson_is_uint(port_val)) {
-    yyjson_doc_free(doc);
+  if (!port_val || !yyjson_is_uint(port_val))
     return handle_parse_err("root", "port");
-  }
 
   cstr db_path_cstr[1024];
   strlcpy(db_path_cstr, yyjson_get_str(db_path_val), 1024);
@@ -268,7 +251,5 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
   local_config->network->port = port;
 
   *config = local_config;
-
-  yyjson_doc_free(doc);
-  return 0;
+  return yueah_success(NULL);
 }

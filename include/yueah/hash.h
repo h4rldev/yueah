@@ -12,11 +12,13 @@
  *
  * @param pool Memory pool to allocate the string.
  * @param password The password to hash.
+ * @param error Error to set if something goes wrong.
  *
  * @return The password hash.
  */
 yueah_string_t *hash_password(h2o_mem_pool_t *pool,
-                              const yueah_string_t *password);
+                              const yueah_string_t *password,
+                              yueah_error_t *error);
 
 /*
  * @brief Verify a password with a hash.

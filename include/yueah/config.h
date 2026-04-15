@@ -11,9 +11,10 @@
  * @param pool The memory pool to allocate from
  * @param config The config to initialize
  *
- * @return 0 on success
+ * @return yueah_error_t containing status.OK if no issues happened, else a
+ * populated error will be returned
  */
-int init_config(h2o_mem_pool_t *pool, yueah_config_t **config);
+yueah_error_t init_config(h2o_mem_pool_t *pool, yueah_config_t **config);
 
 /*
  * @brief Read the config
@@ -23,10 +24,11 @@ int init_config(h2o_mem_pool_t *pool, yueah_config_t **config);
  * @param path The path to the config file (CAN BE NULL to use default path
  * (current directory))
  *
- * @return 0 on success
+ * @return yueah_error_t containing status.OK if no issues happened, else a
+ * populated error will be returned
  */
-int read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
-                yueah_string_nullable_t *path);
+yueah_error_t read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
+                          yueah_string_nullable_t *path);
 
 /*
  * @brief Write the config
@@ -36,9 +38,10 @@ int read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
  * @param path The path to write the config to (CAN BE NULL to use default path
  * (current directory))
  *
- * @return 0 on success
+ * @return yueah_error_t containing status.OK if no issues happened, else a
+ * populated error will be returned
  */
-int write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
-                 yueah_string_nullable_t *path);
+yueah_error_t write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
+                           yueah_string_nullable_t *path);
 
 #endif // !YUEAH_CONFIG_H

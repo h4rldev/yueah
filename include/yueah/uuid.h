@@ -8,6 +8,9 @@
 /*
  * @brief Create a new uuidv4
  *
+ * @note This function doesn't populate a yueah_error_t, so if something goes
+ * wrong, you'll have to troubleshoot yourself.
+ *
  * @param pool Memory pool to allocate from
  *
  * @return A yueah_string_t containing the new uuid

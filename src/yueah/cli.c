@@ -6,9 +6,11 @@
 
 #include <yueah/cli.h>
 #include <yueah/config.h>
+#include <yueah/error.h>
 #include <yueah/log.h>
 #include <yueah/meta.h>
 #include <yueah/string.h>
+#include <yueah/types.h>
 
 static void get_current_year(char (*buf)[5]) {
   struct tm local_time;
@@ -37,7 +39,8 @@ static void usage(void) {
   exit(0);
 }
 
-int parse_args(int argc, char **argv, yueah_config_t **populated_args) {
+yueah_error_t parse_args(int argc, char **argv,
+                         yueah_config_t **populated_args) {
   int option_index = 0;
   char *ip_buf = NULL;
   unsigned int port_buf = 0;
@@ -62,8 +65,7 @@ int parse_args(int argc, char **argv, yueah_config_t **populated_args) {
     case 'i':
       ip_buf = optarg;
       if (strlen(ip_buf) > 15) {
-        yueah_log_error("Unknown ip address \"%s\"\n", ip_buf);
-        return -1;
+        return yueah_throw_error("Unknown ip address \"%s\"\n", ip_buf);
       } else {
         (*populated_args)->network->ip->data = (u8 *)ip_buf;
         (*populated_args)->network->ip->len = strlen(ip_buf);
@@ -73,8 +75,7 @@ int parse_args(int argc, char **argv, yueah_config_t **populated_args) {
     case 'p':
       port_buf = atoi(optarg);
       if (port_buf <= 0 || port_buf > 65535) {
-        fprintf(stderr, "Unknown port \"%s\"\n", optarg);
-        return -1;
+        return yueah_throw_error("Unknown port \"%s\"\n", optarg);
       } else {
         (*populated_args)->network->port = port_buf;
       }
@@ -82,26 +83,22 @@ int parse_args(int argc, char **argv, yueah_config_t **populated_args) {
     case ':':
       switch (optopt) {
       case 'i':
-        yueah_log_error("Missing param for -i/--ip-address\n");
-        return -1;
+        return yueah_throw_error("Missing param for -i/--ip-address\n");
       case 'p':
-        yueah_log_error("Missing param for -p/--port\n");
-        return -1;
+        return yueah_throw_error("Missing param for -p/--port\n");
       default:
-        yueah_log_error("Unknown option \"%c\"\n", optopt);
-        return -1;
+        return yueah_throw_error("Unknown option \"%c\"\n", optopt);
       }
       break;
 
     case '?':
-      yueah_log_error("Invalid flag passed \"%s\"\n", argv[optind - 1]);
-      return -1;
+      return yueah_throw_error("Invalid flag passed \"%s\"", optopt);
 
     default:
-      yueah_log_error("?? getopt returned character code 0%o ??\n", arg);
-      return -1;
+      return yueah_throw_error("?? getopt returned character code 0%o ??",
+                               optopt);
     }
   }
 
-  return 0;
+  return yueah_success(NULL);
 }

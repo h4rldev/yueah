@@ -9,11 +9,13 @@
  *
  * @param pool Memory pool for allocation
  * @param input The body of the post request
+ * @param error Error to set if something goes wrong
  *
  * @return a yueah_string_array_t containing the parsed form data
  */
 yueah_string_array_t *yueah_parse_form_body(h2o_mem_pool_t *pool,
-                                            const yueah_string_t *input);
+                                            const yueah_string_t *form_body,
+                                            yueah_error_t *error);
 
 /*
  * @brief Get value of a key from a parsed post body
@@ -21,12 +23,14 @@ yueah_string_array_t *yueah_parse_form_body(h2o_mem_pool_t *pool,
  * @param pool Memory pool for allocation
  * @param key The key to search for
  * @param input The body of the request form
+ * @param error Error to set if something goes wrong
  *
  * @return a yueah_string_t with the value of the key.
  */
 yueah_string_t *yueah_get_form_val(h2o_mem_pool_t *pool,
                                    const yueah_string_t *key,
-                                   const yueah_string_array_t *form_data);
+                                   const yueah_string_array_t *form_data,
+                                   yueah_error_t *error);
 
 /*
  * @brief Send a generic json response to a request
