@@ -1,3 +1,5 @@
+// TODO: move most of this into yueah instead of whatever this is.
+
 #ifndef YUEAH_API_UTILS_H
 #define YUEAH_API_UTILS_H
 
@@ -54,8 +56,7 @@ char *get_form_val(h2o_mem_pool_t *pool, const char *key, char **input);
  * Returns an array of strings terminated with a null which is at the last byte
  * of the array
  */
-char **parse_post_body(h2o_mem_pool_t *pool, const char *input,
-                       mem_t input_len);
+char **parse_post_body(h2o_mem_pool_t *pool, const char *input, u64 input_len);
 
 /*
  * Get the content of a cookie from a h2o request

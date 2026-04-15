@@ -565,20 +565,20 @@ int post_login_form(h2o_handler_t *handler, h2o_req_t *req) {
 
     switch (err.err_type) {
     case NotFound:
-      memcpy(err_msg, "Invalid username or password", 28);
+      strlcpy(err_msg, "Invalid username or password", 1024);
       status = 401;
       break;
     case Fetch:
-      memcpy(err_msg, "Failed to fetch user", 19);
+      strlcpy(err_msg, "Failed to fetch user", 1024);
       break;
     case IncompleteTable:
-      memcpy(err_msg, "User table is incomplete", 24);
+      strlcpy(err_msg, "User table is incomplete", 1024);
       break;
     case StmtPrepare:
-      memcpy(err_msg, "Failed to prepare SQL statement", 25);
+      strlcpy(err_msg, "Failed to prepare SQL statement", 1024);
       break;
     default:
-      memcpy(err_msg, "Unknown error", 13);
+      strlcpy(err_msg, "Unknown error", 1024);
       break;
     }
     return generic_response(req, status, err_msg);
@@ -715,15 +715,10 @@ int get_refresh(h2o_handler_t *handler, h2o_req_t *req) {
     unsigned char *session_cookie_content = yueah_get_cookie_content(
         &req->pool, session_cookie_str, "yueah_session", &out_len);
 
-    exit(0);
+    yueah_log_debug("Session cookie content: %s", session_cookie_content);
 
     if (yueah_jwt_verify(&req->pool, (char *)session_cookie_content, out_len,
                          "blog", Access) == false) {
-      if (yueah_db_disconnect(db) != 0) {
-        yueah_log_error("Failed to disconnect from db");
-        return generic_response(req, 500, "Failed to disconnect from db");
-      }
-
       return generic_response(req, 401, "Invalid session cookie");
     }
   }
@@ -907,9 +902,8 @@ int get_refresh(h2o_handler_t *handler, h2o_req_t *req) {
   unsigned char *new_refresh_cookie = yueah_cookie_new(
       &req->pool, "yueah_refresh", new_refresh_token, new_refresh_token_len,
       &new_refresh_cookie_len, HTTP_ONLY | MAX_AGE, 604800);
-  h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_SET_COOKIE,
-                 "Set-Cookie", (const char *)new_refresh_cookie,
-                 new_refresh_cookie_len);
+  h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_SET_COOKIE, NULL,
+                 (const char *)new_refresh_cookie, new_refresh_cookie_len);
   after = clock();
   check_time("Time taken to generate new refresh cookie", before, after);
 
@@ -926,9 +920,8 @@ int get_refresh(h2o_handler_t *handler, h2o_req_t *req) {
       &req->pool, "yueah", new_access_token, new_access_token_len,
       &new_access_cookie_len, HTTP_ONLY | MAX_AGE, 900);
 
-  h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_SET_COOKIE,
-                 "Set-Cookie", (const char *)new_access_cookie,
-                 new_refresh_cookie_len);
+  h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_SET_COOKIE, NULL,
+                 (const char *)new_access_cookie, new_refresh_cookie_len);
   after = clock();
   check_time("Time taken to generate new access cookie", before, after);
 

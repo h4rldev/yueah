@@ -1,48 +1,53 @@
 #ifndef YUEAH_SHARED_H
 #define YUEAH_SHARED_H
 
-#include <stdbool.h>
-#include <stdint.h>
-
 #include <h2o.h>
 
-typedef uint64_t mem_t;
+#include <yueah/types.h>
 
+// Data conversion macros
 #define KiB(num) ((mem_t)(num) << 10)
 #define MiB(num) ((mem_t)(num) << 20)
 #define GiB(num) ((mem_t)(num) << 30)
 
-typedef struct {
-  const char *allow_origin;
-  const char *allow_methods;
-  const char *allow_headers;
-  const char *expose_headers;
+/*
+ * @brief Duplicate a cstr
+ *
+ * @param pool The memory pool to allocate from
+ * @param str The string to duplicate
+ * @param size The size of the string
+ *
+ * @return A cstr containing the duplicated string
+ */
+cstr *yueah_cstrdup(h2o_mem_pool_t *pool, const cstr *str, u64 size);
 
-  bool allow_credentials : 1;
-  mem_t max_age;
-} yueah_cors_config_t;
+/*
+ * @brief Print a hex dump of a string
+ *
+ * @param label The label to print before the hex dump
+ * @param str The string to print
+ * @param size The size of the string
+ */
+void print_hex(const char *label, const yueah_string_t *str);
 
-typedef struct {
-  yueah_cors_config_t *public;
-  yueah_cors_config_t *private;
-} yueah_cors_configs_t;
+/*
+ * @brief Convert a h2o_iovec to a cstr
+ *
+ * @param pool The memory pool to allocate from
+ * @param iovec The iovec to convert
+ *
+ * @return A null terminated cstr containing the data the iovec pointed to.
+ */
+cstr *yueah_iovec_to_cstr(h2o_mem_pool_t *pool, h2o_iovec_t *iovec);
 
-typedef struct {
-  char *db_path;
-  yueah_cors_configs_t *cors;
-} yueah_state_t;
+/*
+ * @brief Convert a h2o_iovec to a yueah_string_t
+ *
+ * @param pool The memory pool to allocate from
+ * @param iovec The iovec to convert
+ *
+ * @return A yueah_string_t containing the data the iovec pointed to.
+ */
+yueah_string_t *yueah_iovec_to_string(h2o_mem_pool_t *pool, h2o_iovec_t *iovec);
 
-typedef struct {
-  h2o_handler_t super;
-  yueah_state_t *state;
-} yueah_handler_t;
-
-char *yueah_strdup(h2o_mem_pool_t *pool, const char *str, mem_t size);
-void print_hex_unsigned(const char *label, const unsigned char *str,
-                        size_t size); // to not depend on null terminator
-void print_hex(const char *label, const char *str,
-               size_t size); // to not depend on null terminator
-
-char *yueah_iovec_to_str(h2o_mem_pool_t *pool, h2o_iovec_t *iovec);
-
-#endif // !YUEAH_SHARED_H
+#endif // !YUEAH_SHARED_

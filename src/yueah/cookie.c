@@ -1,7 +1,6 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -12,109 +11,6 @@
 #include <yueah/cookie.h>
 #include <yueah/log.h>
 #include <yueah/shared.h>
-
-#define YUEAH_COOKIE_CIPHER_LEN (4096 + crypto_secretbox_MACBYTES)
-
-static int generate_yueah_key(void) {
-  FILE *key_file;
-  unsigned char key[crypto_secretbox_KEYBYTES];
-  char hex_key[crypto_secretbox_KEYBYTES * 2 + 1];
-
-  crypto_secretbox_keygen(key);
-  char *hex_key_str = sodium_bin2hex(hex_key, crypto_secretbox_KEYBYTES * 2 + 1,
-                                     key, crypto_secretbox_KEYBYTES);
-  if (hex_key_str == NULL || hex_key_str != hex_key) {
-    yueah_log(Error, false, "Failed to make key hex");
-    return -1;
-  }
-
-  key_file = fopen("cookie_key.txt", "w");
-  hex_key[strlen(hex_key)] = '\n';
-  fwrite(hex_key, sizeof(hex_key), 1, key_file);
-  fwrite("use this key instead ^", strlen("use this key instead ^"), 1,
-         key_file);
-  fclose(key_file);
-
-  return 0;
-}
-
-unsigned char *yueah_cookie_encrypt(h2o_mem_pool_t *pool,
-                                    unsigned char *content, mem_t content_len,
-                                    mem_t *out_len) {
-  if (!pool || !content)
-    return NULL;
-
-  unsigned char key[crypto_secretbox_KEYBYTES];
-  unsigned char nonce[crypto_secretbox_NONCEBYTES];
-
-  mem_t ciphertext_len =
-      content_len + crypto_secretbox_MACBYTES + crypto_secretbox_NONCEBYTES;
-  unsigned char *ciphertext =
-      h2o_mem_alloc_pool(pool, unsigned char *, ciphertext_len);
-
-  char *key_buf = getenv("YUEAH_AES_KEY");
-  if (!key_buf || strlen(key_buf) < crypto_secretbox_KEYBYTES) {
-    yueah_log(Error, true,
-              "Invalid YUEAH_AES_KEY, too short, generating one, check "
-              "cookie_key.txt");
-    if (generate_yueah_key() < 0)
-      return NULL;
-
-    return NULL;
-  }
-
-  memcpy(key, key_buf, crypto_secretbox_KEYBYTES);
-
-  randombytes_buf(nonce, crypto_secretbox_NONCEBYTES);
-
-  memcpy(ciphertext, nonce, crypto_secretbox_NONCEBYTES);
-  crypto_secretbox_easy(ciphertext + crypto_secretbox_NONCEBYTES, content,
-                        content_len, nonce, key);
-
-  *out_len = ciphertext_len;
-  return ciphertext;
-}
-
-unsigned char *yueah_cookie_decrypt(h2o_mem_pool_t *pool, unsigned char *bin,
-                                    mem_t bin_len, mem_t *out_len) {
-  if (!pool || !bin)
-    return NULL;
-
-  int rc = 0;
-  char *key_buf = getenv("YUEAH_AES_KEY");
-  if (!key_buf || strlen(key_buf) < crypto_secretbox_KEYBYTES) {
-    yueah_log(Error, true, "Invalid YUEAH_AES_KEY, nothing to decrypt");
-    return NULL;
-  }
-
-  mem_t decrypted_len =
-      bin_len - crypto_secretbox_MACBYTES - crypto_secretbox_NONCEBYTES;
-
-  unsigned char key[crypto_secretbox_KEYBYTES];
-  unsigned char nonce[crypto_secretbox_NONCEBYTES];
-  unsigned char *ciphertext = h2o_mem_alloc_pool(
-      pool, unsigned char *, bin_len - crypto_secretbox_NONCEBYTES);
-  unsigned char *result =
-      h2o_mem_alloc_pool(pool, unsigned char *, decrypted_len);
-
-  memcpy(key, key_buf, crypto_secretbox_KEYBYTES);
-
-  memmove(nonce, bin, crypto_secretbox_NONCEBYTES);
-  memmove(ciphertext, bin + crypto_secretbox_NONCEBYTES,
-          bin_len - crypto_secretbox_NONCEBYTES);
-
-  rc = crypto_secretbox_open_easy(
-      result, ciphertext, bin_len - crypto_secretbox_NONCEBYTES, nonce, key);
-  if (rc != 0) {
-    yueah_log(Error, true, "Failed to decrypt content, code %d", rc);
-    return NULL;
-  }
-
-  decrypted_len -= 2;
-  *out_len = decrypted_len;
-  result[decrypted_len] = '\0';
-  return result;
-}
 
 static char *unix_time_to_date_header(uint64_t unix_time) {
   static char date[1024] = {0};
@@ -267,16 +163,12 @@ unsigned char *yueah_cookie_new(h2o_mem_pool_t *pool, const char *cookie_name,
 
   // This expects the content array ends with NULL
 
-  mem_t encrypted_out_len = 0;
   mem_t cookie_contents_encoded_len = 0;
 
   unsigned char *cookie_contents = (unsigned char *)content;
 
-  unsigned char *cookie_contents_encrypted = yueah_cookie_encrypt(
-      pool, cookie_contents, content_len, &encrypted_out_len);
-  char *cookie_contents_encoded =
-      yueah_base64_encode(pool, cookie_contents_encrypted, encrypted_out_len,
-                          &cookie_contents_encoded_len);
+  char *cookie_contents_encoded = yueah_base64_encode(
+      pool, cookie_contents, content_len, &cookie_contents_encoded_len);
 
   memcpy(cookie_header, cookie_name, strlen(cookie_name));
   memcpy(cookie_header + strlen(cookie_name), "=", 1);
@@ -404,27 +296,20 @@ unsigned char *yueah_get_cookie_content(h2o_mem_pool_t *pool,
                                         const char *cookie_header,
                                         const char *cookie_name,
                                         mem_t *out_len) {
-  unsigned char *decrypted_content = NULL;
   char *content = parse_cookie(pool, cookie_header, cookie_name);
   if (!content) {
     yueah_log_error("Failed to parse cookie");
     return NULL;
   }
 
+  yueah_log_debug("Cookie content: %s", content);
+
   mem_t decoded_content_len = 0;
   unsigned char *decoded_content = yueah_base64_decode(
       pool, content, strlen(content), 4096, &decoded_content_len);
 
-  mem_t decrypted_len = 0;
-  decrypted_content = yueah_cookie_decrypt(pool, decoded_content,
-                                           decoded_content_len, &decrypted_len);
-  if (!decrypted_content || decrypted_len < 10) {
-    yueah_log_error("Failed to decrypt cookie");
-    return NULL;
-  }
+  yueah_log_debug("cookie_content: %s", decoded_content);
 
-  // yueah_log_debug("cookie_content: %s", decrypted_content);
-
-  *out_len = decrypted_len;
-  return decrypted_content;
+  *out_len = decoded_content_len;
+  return decoded_content;
 }

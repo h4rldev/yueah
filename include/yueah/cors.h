@@ -5,33 +5,29 @@
 
 #include <h2o.h>
 
-#include <yueah/shared.h>
+#include <yueah/types.h>
 
 /*
- * Add CORS headers to the request
+ * @brief Add CORS headers to a request
  *
+ * @param req Request struct to add CORS headers to
+ * @param config Configuration struct for CORS headers (usually gotten through
+ * req handler)
  *
- * [req]  Request struct to add CORS headers to
- *
- * [config]  Configuration struct for CORS headers (usually gotten the req
- * handler)
- *
- *
- * Returns 0 on success
+ * @return 0 on success
  */
 int yueah_add_cors_headers(h2o_req_t *req, const yueah_cors_config_t *config);
 
 /*
  * Handles OPTIONS requests for CORS
  *
+ * @note This function is meant to be returned when a handler recieves an
+ * OPTIONS request
  *
- * [handler]  Handler struct for OPTIONS request
+ * @param handler The h2o handler for the OPTIONS request
+ * @param req The h2o request for the OPTIONS request
  *
- * [req]  Request struct for OPTIONS request
- *
- *
- * Returns 0 on success (is meant to be returned in a registered handler when
- * the METHOD is OPTIONS)
+ * @return 0 on success.
  */
 int yueah_handle_options(h2o_req_t *req, const yueah_cors_config_t *config);
 

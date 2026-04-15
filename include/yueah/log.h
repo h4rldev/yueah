@@ -1,24 +1,7 @@
 #ifndef YUEAH_LOG_H
 #define YUEAH_LOG_H
 
-#include <stdbool.h>
-#include <stdio.h>
-
-#include <yueah/shared.h>
-
-typedef enum { LOG_TO_FD, LOG_TO_PATH } yueah_log_type_t;
-typedef struct {
-  yueah_log_type_t type;
-  FILE *fd;
-  char *path;
-} log_target_t;
-
-typedef enum {
-  Error,
-  Warning,
-  Info,
-  Debug,
-} log_level_t;
+#include <yueah/types.h>
 
 #ifndef YUEAH_NO_LOG_COLORS
 #define COLOR_RESET "\x1b[0m"
@@ -41,7 +24,7 @@ int __register_logger_fd(FILE *fd);
 int __register_logger_path(char *path);
 
 void yueah_log(log_level_t level, bool time, const char *fmt, ...);
-void yueah_log_bytes(log_level_t level, bool time, mem_t bytes, const char *fmt,
+void yueah_log_bytes(log_level_t level, bool time, u64 bytes, const char *fmt,
                      ...);
 
 #define register_logger(target)                                                \

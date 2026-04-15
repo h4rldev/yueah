@@ -408,9 +408,10 @@ int generic_response(h2o_req_t *req, int status, const char *message) {
   req->res.status = status;
   req->res.reason = get_res_reason(status);
 
-  h2o_start_response(req, &generator);
   h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_CONTENT_TYPE, NULL,
                  H2O_STRLIT("application/json; charset=utf-8"));
+
+  h2o_start_response(req, &generator);
   h2o_send(req, &body_iovec, 1, 1);
 
   return 0;

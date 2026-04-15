@@ -28,5 +28,8 @@ with pkgs;
       just
       gf
       h2o
+      prettierd
+      doctoc
+      cbfmt
     ];
   }

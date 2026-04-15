@@ -30,12 +30,10 @@ unsigned char *yueah_base64_decode(h2o_mem_pool_t *pool, char *base64,
                                    mem_t *out_len) {
   mem_t buf_len = 0;
   mem_t max_len = max_out_len;
-  mem_t new_base_64_len = base64_len + 1;
-
   int rc = 0;
   unsigned char *buf = h2o_mem_alloc_pool(pool, unsigned char *, buf_len);
 
-  rc = sodium_base642bin(buf, max_len, base64, new_base_64_len, NULL, &buf_len,
+  rc = sodium_base642bin(buf, max_len * 64, base64, base64_len, NULL, &buf_len,
                          NULL, sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
   if (rc != 0) {
     yueah_log_error("sodium_base642bin failed: code %d", rc);

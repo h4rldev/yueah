@@ -3,17 +3,31 @@
 
 #include <stdbool.h>
 
-char *get_mime(const char *path);
-char *get_cwd(void);
-
-int make_dir(const char *path);
-bool path_exist(const char *path);
+#include <yueah/types.h>
 
 /*
-bool is_dir(const char *path);
-bool is_file(const char *path);
-char *read_file_from_fd(mem_arena *arena, FILE *file);
-char *read_file(mem_arena *arena, const char *path);
-*/
+ * @brief Get current working directory
+ *
+ * @param pool Memory pool to allocate the string
+ */
+yueah_string_t *get_cwd(h2o_mem_pool_t *pool);
+
+/*
+ * @brief Make a directory
+ *
+ * @param path Path to the directory
+ *
+ * @return 0 on success, otherwise an error code
+ */
+int make_dir(const yueah_string_t *path);
+
+/*
+ * @brief Check if a path exists
+ *
+ * @param path Path to check
+ *
+ * @return true if the path exists, false otherwise
+ */
+bool path_exist(const yueah_string_t *path);
 
 #endif // !YUEAH_FILE_H

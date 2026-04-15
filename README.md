@@ -1,3 +1,26 @@
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
+- [yueah](#yueah)
+  - [Building](#building)
+    - [Dependencies](#dependencies)
+    - [yueah's migrator's Dependencies](#yueahs-migrators-dependencies)
+    - [yueah's dotenv's Dependencies](#yueahs-dotenvs-dependencies)
+    - [libH2O's dependencies](#libh2os-dependencies)
+    - [Building libH2O](#building-libh2o)
+    - [Building yueah's dotenv](#building-yueahs-dotenv)
+    - [Building yueah](#building-yueah)
+      - [Release](#release)
+      - [Debug](#debug)
+    - [Building yueah's migrator](#building-yueahs-migrator)
+      - [Release](#release-1)
+      - [Debug](#debug-1)
+    - [Running yueah's migrator](#running-yueahs-migrator)
+    - [Running](#running)
+  - [License](#license)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 # yueah
 
 A small blogging backend written in C.

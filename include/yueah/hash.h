@@ -5,11 +5,27 @@
 
 #include <h2o.h>
 
-#include <yueah/shared.h>
+#include <yueah/types.h>
 
-char *hash_password(h2o_mem_pool_t *pool, const char *password,
-                    mem_t password_len);
-bool verify_password(const char *hash, const char *password,
-                     mem_t password_len);
+/*
+ * @brief Hash a password with argon2.
+ *
+ * @param pool Memory pool to allocate the string.
+ * @param password The password to hash.
+ *
+ * @return The password hash.
+ */
+yueah_string_t *hash_password(h2o_mem_pool_t *pool, yueah_string_t *password);
+
+/*
+ * @brief Verify a password with a hash.
+ *
+ * @param password The password to verify.
+ * @param hash The hash to verify.
+ *
+ * @return true if the password matches the hash, false otherwise.
+ */
+bool verify_password(const yueah_string_t *password,
+                     const yueah_string_t *hash);
 
 #endif // !YUEAH_HASH_H

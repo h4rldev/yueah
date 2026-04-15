@@ -261,11 +261,6 @@ int main(int argc, char **argv) {
     ca.min_size = yueah_config->compression->min_size;
 
   h2o_compress_register(pathconf, &ca);
-  if (logfh != NULL)
-    h2o_access_log_register(pathconf, logfh);
-
-  if (log2file != NULL)
-    h2o_access_log_register(pathconf, log2file);
 
 NotCompress:
   uv_loop_init(&loop);

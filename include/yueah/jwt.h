@@ -1,94 +1,62 @@
 #ifndef YUEAH_JWT_H
 #define YUEAH_JWT_H
 
-#include <stdbool.h>
-
 #include <h2o.h>
 
-#include <yueah/shared.h>
-
-typedef struct {
-  char *alg;
-  char *typ;
-} yueah_jwt_header_t;
-
-typedef struct {
-  const char *iss;
-  const char *sub;
-  const char *aud;
-  mem_t iat;
-  mem_t exp;
-  const char *jti;
-  mem_t nbf;
-} yueah_jwt_claims_t;
-
-typedef enum {
-  Access,
-  Refresh,
-} yueah_jwt_key_type_t;
+#include <yueah/types.h>
 
 /*
- * Construct a jwt payload
+ * @brief Construct a jwt payload
  *
- * [pool]  Memory pool to allocate from
+ * @param pool Memory pool to allocate from
+ * @param iss Token issuer
+ * @param sub Subject (user/user id)
+ * @param aud Audience (client id or something like that)
+ * @param exp Expiration time (in 64 bit unix time)
+ * @param nbf Not before time (in 64 bit unix time)
  *
- * [iss]  Issuer
- *
- * [sub]  Subject (user/user id)
- *
- * [aud]  Audience (client id or something like that)
- *
- * [exp]  Expiration time (in 64 bit unix time)
- *
- * [nbf]  Not before time (in 64 bit unix time)
- *
- *
- * Returns a pointer to the assembled payload
+ * @return A pointer to the assembled payload
  */
 
 yueah_jwt_claims_t *yueah_jwt_create_claims(h2o_mem_pool_t *pool,
-                                            const char *iss, const char *sub,
-                                            const char *aud, const mem_t exp,
-                                            const mem_t nbf);
+                                            const yueah_string_t *iss,
+                                            const yueah_string_t *sub,
+                                            const yueah_string_t *aud,
+                                            const u64 exp, const u64 nbf);
 
 /*
- * Encode a jwt token
+ * @brief Encode a jwt token
  *
- * [pool]  Memory pool to allocate from
+ * @param pool Memory pool to allocate from
+ * @param payload Payload to encode
+ * @param key_type Type of key to use (Access or Refresh)
  *
- * [payload]  Payload to encode
- *
- * [key_type]  Type of key to use (Access or Refresh)
- *
- * [*out_len]  Length of the encoded token
- *
- *
- * Returns a pointer to the encoded token
+ * @return a pointer to the encoded token as a string.
  */
-char *yueah_jwt_encode(h2o_mem_pool_t *pool, const yueah_jwt_claims_t *payload,
-                       yueah_jwt_key_type_t key_type, mem_t *out_len);
+yueah_string_t *yueah_jwt_encode(h2o_mem_pool_t *pool,
+                                 const yueah_jwt_claims_t *payload,
+                                 yueah_jwt_key_type_t key_type);
 
 /*
- * Verify a jwt token's signature
+ * @brief Verify a jwt token's signature
  *
- * [pool]  Memory pool to allocate from
+ * @param pool Memory pool to allocate from
+ * @param token Token to verify
+ * @param aud Audience to verify
+ * @param key_type Type of key to use (Access or Refresh)
  *
- * [token]  Token to verify
- *
- * [token_len]  Length of the token
- *
- * [aud]  Audience to verify
- *
- * [key_type]  Type of key to use (Access or Refresh)
- *
- *
- * Returns true if the token is valid, false otherwise
+ * @return true if the token is valid, false otherwise
  */
 
-bool yueah_jwt_verify(h2o_mem_pool_t *pool, const char *token, mem_t token_len,
-                      const char *aud, yueah_jwt_key_type_t key_type);
+bool yueah_jwt_verify(h2o_mem_pool_t *pool, const yueah_string_t *token,
+                      const yueah_string_t *aud, yueah_jwt_key_type_t key_type);
 
-char *yueah_jwt_get_sub(h2o_mem_pool_t *pool, const char *token,
-                        mem_t token_len);
+/*
+ * @brief Get the token's subject
+ *
+ * @param pool Memory pool to allocate from
+ * @param token Token to get the subject from
+ */
+char *yueah_jwt_get_sub(h2o_mem_pool_t *pool, const yueah_string_t *token);
 
 #endif // !YUEAH_JWT_H

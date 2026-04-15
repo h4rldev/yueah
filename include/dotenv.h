@@ -2,11 +2,11 @@
 #define DOTENV_H
 
 /*
- * Get env vars from a file
+ * @brief Get env vars from a file
  *
- * [path]  Location of env file
+ * @param path Path to the file to load env vars from
  *
- * Returns amount of env vars loaded
+ * @return Amount of loaded env vars
  */
 int load_dotenv(const char *path);
 
