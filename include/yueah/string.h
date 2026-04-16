@@ -21,6 +21,25 @@ yueah_string_t *yueah_string_new(h2o_mem_pool_t *pool, const cstr_nullable *str,
                                  u64 size);
 
 /*
+ * @brief Append a string to another string.
+ *
+ * @note This doesn't append to the string in dest, but returns the result of
+ * the append as a new string.
+ *
+ * @note This function doesn't populate a yueah_error_t, so if something goes
+ * wrong, you'll have to troubleshoot yourself.
+ *
+ * @param pool The memory pool to allocate the string from.
+ * @param dest The string to append to.
+ * @param src The string to append.
+ *
+ * @return The new string.
+ */
+yueah_string_t *yueah_string_append(h2o_mem_pool_t *pool,
+                                    const yueah_string_t *dest,
+                                    const yueah_string_t *src);
+
+/*
  * @brief Convert string to cstr.
  *
  * @note This function doesn't populate a yueah_error_t, so if something goes

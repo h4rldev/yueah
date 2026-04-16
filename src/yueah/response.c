@@ -176,8 +176,8 @@ static char *get_res_reason(int status) {
 
 static yueah_string_t *
 error_resp_to_json(h2o_mem_pool_t *pool, yyjson_mut_doc *doc,
-                   yyjson_mut_val *root,
-                   yueah_error_response_t *error_response) {
+                   yyjson_mut_val *root, yueah_error_response_t *error_response,
+                   yueah_error_t *error) {
   yyjson_write_err err;
   char *json;
 
@@ -198,7 +198,7 @@ error_resp_to_json(h2o_mem_pool_t *pool, yyjson_mut_doc *doc,
   json = h2o_mem_alloc_pool(pool, char *, out_len);
   json = yyjson_mut_write_opts(doc, YYJSON_WRITE_NOFLAG, NULL, &out_len, &err);
   if (!json) {
-    yueah_log(Error, true, "Error writing json: %d:%s", err.code, err.msg);
+    *error = yueah_throw_error("Error writing json: %d:%s", err.code, err.msg);
     return NULL;
   }
 
@@ -220,9 +220,9 @@ yueah_string_array_t *yueah_parse_form_body(h2o_mem_pool_t *pool,
   u64 array_len = 1;
   int part_idx = 0;
 
-  for (u64 i = 0; i < form_body->len; i++)
+  for (u64 i = 0; decoded_input[i] != '\0'; i++)
     if (decoded_input[i] == '&')
-      array_len = array_len + 2;
+      array_len++;
 
   char *ptr = decoded_input;
   yueah_string_t **res = h2o_mem_alloc_pool(pool, yueah_string_t, array_len);
@@ -230,8 +230,7 @@ yueah_string_array_t *yueah_parse_form_body(h2o_mem_pool_t *pool,
   while (next != NULL) {
     u64 part_len = strlen(next);
 
-    res[part_idx]->data = h2o_mem_alloc_pool(pool, cstr, part_len);
-    memcpy(res[part_idx]->data, next, part_len);
+    res[part_idx] = yueah_string_new(pool, next, part_len);
 
     part_idx++;
     next = strtok(NULL, "&");
@@ -261,8 +260,6 @@ yueah_string_t *yueah_get_form_val(h2o_mem_pool_t *pool,
   }
 
   u64 key_idx = 0;
-  u64 key_len = 0;
-
   for (u64 i = 0; i < form_data->len; i++) {
     if (memcmp(form_data->strings[i]->data, key->data, key->len) != 0)
       continue;
@@ -270,25 +267,32 @@ yueah_string_t *yueah_get_form_val(h2o_mem_pool_t *pool,
     key_idx = i;
   }
 
-  cstr *val = (cstr *)form_data->strings[key_idx]->data + key_len + 1;
-  u64 val_len = form_data->strings[key_idx]->len - key_len - 1;
+  cstr *val = (cstr *)form_data->strings[key_idx]->data + key->len + 1;
+  u64 val_len = form_data->strings[key_idx]->len - key->len - 1;
   return yueah_string_new(pool, val, val_len);
 }
 
 int yueah_generic_response(h2o_req_t *req, u16 status,
                            const yueah_string_t *message) {
   h2o_generator_t generator = {NULL, NULL};
+  h2o_mem_pool_t *pool = &req->pool;
+  yueah_error_t error = yueah_success(NULL);
+
   yueah_error_response_t *error_response =
       h2o_mem_alloc_pool(&req->pool, yueah_error_response_t, 1);
 
   error_response->status = status;
-  error_response->message = h2o_mem_alloc_pool(&req->pool, char *, 1024);
-  error_response->message = (char *)message;
+  error_response->message = yueah_string_to_cstr(pool, message);
 
   yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
   yyjson_mut_val *root = yyjson_mut_obj(doc);
   yueah_string_t *body =
-      error_resp_to_json(&req->pool, doc, root, error_response);
+      error_resp_to_json(pool, doc, root, error_response, &error);
+  if (error.status != OK) {
+    yueah_print_error(error);
+    return -1;
+  }
+
   h2o_iovec_t *body_iovec = yueah_string_to_iovec(&req->pool, body);
 
   req->res.status = status;

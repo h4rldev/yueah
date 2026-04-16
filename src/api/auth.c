@@ -6,130 +6,95 @@
 #include <yueah/cookie.h>
 #include <yueah/cors.h>
 #include <yueah/db.h>
+#include <yueah/error.h>
 #include <yueah/hash.h>
 #include <yueah/jwt.h>
 #include <yueah/log.h>
+#include <yueah/response.h>
+#include <yueah/string.h>
 #include <yueah/types.h>
 #include <yueah/uuid.h>
 
 #include <api/auth.h>
 
-typedef enum {
-  Poster,
-  Admin,
-  Banned,
-} yueah_user_role_t;
-
-typedef struct {
-  char *username;
-  char *userid;
-  char *password_hash;
-  char *role;
-} yueah_user_t;
-
-typedef enum {
-  ConstraintSuccess,
-  UserID,
-  Username,
-} yueah_constraint_err_t;
-
-typedef enum {
-  Fetch,
-  IncompleteTable,
-  NotFound,
-  Insert,
-  StmtPrepare,
-  Bind,
-  ConstraintErr,
-  TokenIsBlacklisted,
-  SqlSuccess,
-} yueah_sql_err_type_t;
-
-typedef struct {
-  yueah_sql_err_type_t err_type;
-  yueah_constraint_err_t constraint_err;
-} yueah_sql_err_t;
-
-typedef enum {
-  MethodNotAllowed,
-  FailedToFindContentType,
-  WrongContentType,
-  Success,
-} yueah_verify_err_t;
-static yueah_verify_err_t verify_headers(h2o_req_t *req, char *method,
-                                         mem_t method_len, char *content_type,
-                                         mem_t content_type_len) {
-  if (!h2o_memis(req->method.base, req->method.len, method, method_len))
-    return MethodNotAllowed;
+static yueah_error_t verify_headers(h2o_req_t *req, yueah_string_t *method,
+                                    yueah_string_t *content_type) {
+  if (!h2o_memis(req->method.base, req->method.len, YUEAH_SSTRLIT(method)))
+    return yueah_throw_error("Method not allowed");
 
   if (content_type != NULL) {
     int header_index =
         h2o_find_header(&req->headers, H2O_TOKEN_CONTENT_TYPE, -1);
     if (header_index == -1)
-      return FailedToFindContentType;
+      return yueah_throw_error("Failed to find header for Content-Type");
 
     if (!h2o_memis(req->headers.entries[header_index].value.base,
-                   req->headers.entries[header_index].value.len, content_type,
-                   content_type_len))
-      return WrongContentType;
+                   req->headers.entries[header_index].value.len,
+                   YUEAH_SSTRLIT(content_type)))
+      return yueah_throw_error(
+          "Content-Type is not application/x-www-form-urlencoded");
   }
 
-  return Success;
+  return yueah_success(NULL);
 }
 
-static yueah_constraint_err_t get_constraint_err(const char *error_msg) {
+static yueah_error_t get_constraint_err(const int errcode,
+                                        const char *error_msg) {
   if (strstr(error_msg, "UNIQUE constraint failed: users.username") != NULL)
-    return Username;
+    return yueah_throw_error(
+        "Failed to insert user (%d:%s), i.e Username already exists", errcode,
+        error_msg);
 
   if (strstr(error_msg, "UNIQUE constraint failed: users.userid") != NULL)
-    return UserID;
+    return yueah_throw_error(
+        "Failed to insert user (%d:%s), i.e UserID already exists", errcode,
+        error_msg);
 
-  return ConstraintSuccess;
+  return yueah_success(NULL);
 }
 
-static int insert_user(sqlite3 *conn, yueah_user_t *user,
-                       yueah_sql_err_t *err) {
+static yueah_error_t insert_user(h2o_mem_pool_t *pool, sqlite3 *conn,
+                                 yueah_user_t *user) {
   int rc = 0;
   sqlite3_stmt *stmt;
   const char *sql = "INSERT INTO users (userid, username, password_hash, role) "
                     "VALUES (?, ?, ?, ?);";
 
   rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
-  if (rc != SQLITE_OK) {
-    yueah_log_error("Failed to prepare statement: %d:%s", sqlite3_errcode(conn),
-                    sqlite3_errmsg(conn));
-    *err = (yueah_sql_err_t){.err_type = StmtPrepare, 0};
-    return -1;
-  }
+  if (rc != SQLITE_OK)
+    return yueah_throw_error("Failed to prepare statement: %d:%s",
+                             sqlite3_errcode(conn), sqlite3_errmsg(conn));
 
-  sqlite3_bind_text(stmt, 1, user->userid, -1, SQLITE_STATIC);
-  sqlite3_bind_text(stmt, 2, user->username, -1, SQLITE_STATIC);
-  sqlite3_bind_text(stmt, 3, user->password_hash, -1, SQLITE_STATIC);
-  sqlite3_bind_text(stmt, 4, user->role, -1, SQLITE_STATIC);
+  cstr *userid_cstr = yueah_string_to_cstr(pool, user->userid);
+  cstr *username_cstr = yueah_string_to_cstr(pool, user->username);
+  cstr *password_hash_cstr = yueah_string_to_cstr(pool, user->password_hash);
+  cstr *role_cstr = yueah_string_to_cstr(pool, user->role);
+
+  sqlite3_bind_text(stmt, 1, userid_cstr, -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 2, username_cstr, -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 3, password_hash_cstr, -1, SQLITE_STATIC);
+  sqlite3_bind_text(stmt, 4, role_cstr, -1, SQLITE_STATIC);
 
   rc = sqlite3_step(stmt);
   if (rc != SQLITE_DONE) {
-    yueah_log_error("Failed to insert user: %d:%s", sqlite3_errcode(conn),
-                    sqlite3_errmsg(conn));
-    if (rc == SQLITE_CONSTRAINT) {
-      yueah_constraint_err_t constraint_err =
-          get_constraint_err(sqlite3_errmsg(conn));
-      *err = (yueah_sql_err_t){.err_type = ConstraintErr,
-                               .constraint_err = constraint_err};
-    }
+    if (rc == SQLITE_CONSTRAINT)
+      return get_constraint_err(sqlite3_errcode(conn), sqlite3_errmsg(conn));
 
-    return -1;
+    return yueah_throw_error("Failed to insert user (%d:%s)",
+                             sqlite3_errcode(conn), sqlite3_errmsg(conn));
   }
 
   sqlite3_finalize(stmt);
-  yueah_log_info("Inserted user: %s:%s", user->username, user->userid);
+  yueah_log_info("Inserted user: %.*s:%.*s", (int)user->username->len,
+                 user->username->data, (int)user->userid->len,
+                 user->userid->data);
 
-  return 0;
+  return yueah_success(NULL);
 }
 
-static int get_user_userid(h2o_mem_pool_t *pool, sqlite3 *conn,
-                           const char *userid, yueah_user_t **user,
-                           yueah_sql_err_t *err) {
+static yueah_user_t *get_user_userid(h2o_mem_pool_t *pool, sqlite3 *conn,
+                                     const yueah_string_t *userid,
+                                     yueah_error_t *error) {
   int rc = 0;
   sqlite3_stmt *stmt;
   const char *sql = "SELECT * FROM users WHERE userid = ?;";
@@ -137,220 +102,117 @@ static int get_user_userid(h2o_mem_pool_t *pool, sqlite3 *conn,
 
   rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
-    yueah_log_error("Failed to prepare statement: %d:%s", sqlite3_errcode(conn),
-                    sqlite3_errmsg(conn));
-    *err = (yueah_sql_err_t){.err_type = StmtPrepare, 0};
-    return -1;
+    *error = yueah_throw_error("Failed to prepare statement: %d:%s",
+                               sqlite3_errcode(conn), sqlite3_errmsg(conn));
+    return NULL;
   }
 
-  if (sqlite3_column_count(stmt) != 6) {
-    yueah_log_error("Failed to get user: wrong number of columns");
-    yueah_log_error("SQL: %s", sql);
-    yueah_log_error("SQLITE_COLUMN_COUNT: %d", sqlite3_column_count(stmt));
-    *err = (yueah_sql_err_t){IncompleteTable, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  sqlite3_bind_text(stmt, 1, userid, -1, SQLITE_STATIC);
+  cstr *userid_cstr = yueah_string_to_cstr(pool, userid);
+  sqlite3_bind_text(stmt, 1, userid_cstr, -1, SQLITE_STATIC);
 
   if ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     int id = sqlite3_column_int(stmt, 0);
-    unsigned char *gotten_userid =
-        (unsigned char *)sqlite3_column_text(stmt, 1);
-    unsigned char *username = (unsigned char *)sqlite3_column_text(stmt, 2);
-    unsigned char *password_hash =
-        (unsigned char *)sqlite3_column_text(stmt, 3);
-    unsigned char *role = (unsigned char *)sqlite3_column_text(stmt, 5);
+    const ucstr *gotten_userid = sqlite3_column_text(stmt, 1);
+    const ucstr *username = sqlite3_column_text(stmt, 2);
+    const ucstr *password_hash = sqlite3_column_text(stmt, 3);
+    const ucstr *role = sqlite3_column_text(stmt, 5);
 
-    yueah_log_info("userid: %s", gotten_userid);
-    yueah_log_info("username: %s", username);
-    yueah_log_info("password_hash: %s", password_hash);
-    yueah_log_info("role: %s", role);
+    yueah_log_debug("(%s) Gotten Userid: %s", userid_cstr, gotten_userid);
+    yueah_log_debug("(%s) Gotten username: %s", userid_cstr, username);
+    yueah_log_debug("(%s) Gotten password_hash: %s", userid_cstr,
+                    password_hash);
+    yueah_log_debug("(%s) Gotten role: %s", userid_cstr, role);
 
-    user_buf->userid = yueah_strdup(pool, (const char *)userid,
-                                    strlen((char *)gotten_userid) + 1);
-    user_buf->username = yueah_strdup(pool, (const char *)username,
-                                      strlen((char *)username) + 1);
-    user_buf->password_hash = yueah_strdup(pool, (const char *)password_hash,
-                                           strlen((char *)password_hash) + 1);
-    user_buf->role =
-        yueah_strdup(pool, (const char *)role, strlen((char *)role) + 1);
+    user_buf->userid = (yueah_string_t *)userid;
+    user_buf->username =
+        yueah_string_new(pool, (cstr *)username, strlen((cstr *)username));
+    user_buf->password_hash = yueah_string_new(pool, (cstr *)password_hash,
+                                               strlen((cstr *)password_hash));
+    user_buf->role = yueah_string_new(pool, (cstr *)role, strlen((cstr *)role));
 
     yueah_log_info("Found user at table index %d", id);
     rc = sqlite3_step(stmt);
   } else if (rc == SQLITE_DONE) {
-    yueah_log_info("User %s not found", userid);
-    *err = (yueah_sql_err_t){NotFound, 0};
+    *error = yueah_throw_error("User %s not found", userid_cstr);
     sqlite3_finalize(stmt);
-    return -1;
+    return NULL;
   }
-
-  if (user_buf->userid == NULL) {
-    yueah_log_error("Failed to get user: no userid");
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  if (user_buf->username == NULL) {
-    yueah_log_error("Failed to get user: no username");
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  if (user_buf->password_hash == NULL) {
-    yueah_log_error("Failed to get user: no password_hash");
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  if (user_buf->role == NULL) {
-    yueah_log_error("Failed to get user: no role");
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  if (rc != SQLITE_DONE) {
-    yueah_log_error("Failed to get user: %d:%s", sqlite3_errcode(conn),
-                    sqlite3_errmsg(conn));
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  *user = user_buf;
 
   sqlite3_finalize(stmt);
-  return 0;
+  *error = yueah_success(NULL);
+  return user_buf;
 }
 
-static int get_user(h2o_mem_pool_t *pool, sqlite3 *conn, const char *username,
-                    yueah_user_t **user, yueah_sql_err_t *err) {
+static yueah_user_t *get_user(h2o_mem_pool_t *pool, sqlite3 *conn,
+                              const yueah_string_t *username,
+                              yueah_error_t *error) {
   int rc = 0;
   sqlite3_stmt *stmt;
-  const char *sql = "SELECT userid, username, password_hash, role FROM users "
+  const cstr *sql = "SELECT userid, username, password_hash, role FROM users "
                     "WHERE username = ?;";
   yueah_user_t *user_buf = h2o_mem_alloc_pool(pool, yueah_user_t, 1);
 
   rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
-    yueah_log_error("Failed to prepare statement: %d:%s", sqlite3_errcode(conn),
-                    sqlite3_errmsg(conn));
-    *err = (yueah_sql_err_t){.err_type = StmtPrepare, 0};
-    return -1;
+    *error = yueah_throw_error("Failed to prepare statement: %d:%s",
+                               sqlite3_errcode(conn), sqlite3_errmsg(conn));
+    return NULL;
   }
 
-  if (sqlite3_column_count(stmt) != 4) {
-    yueah_log_error("Failed to get user: wrong number of columns");
-    yueah_log_error("SQL: %s", sql);
-    yueah_log_error("SQLITE_COLUMN_COUNT: %d", sqlite3_column_count(stmt));
-    *err = (yueah_sql_err_t){IncompleteTable, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
+  cstr *username_cstr = yueah_string_to_cstr(pool, username);
+  sqlite3_bind_text(stmt, 1, username_cstr, -1, SQLITE_STATIC);
 
   if ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-    unsigned char *userid = (unsigned char *)sqlite3_column_text(stmt, 0);
-    unsigned char *username = (unsigned char *)sqlite3_column_text(stmt, 1);
-    unsigned char *password_hash =
-        (unsigned char *)sqlite3_column_text(stmt, 2);
-    unsigned char *role = (unsigned char *)sqlite3_column_text(stmt, 3);
+    const ucstr *userid = sqlite3_column_text(stmt, 0);
+    const ucstr *gotten_username = sqlite3_column_text(stmt, 1);
+    const ucstr *password_hash = sqlite3_column_text(stmt, 2);
+    const ucstr *role = sqlite3_column_text(stmt, 3);
 
-    yueah_log_info("userid: %s", userid);
-    yueah_log_info("username: %s", username);
-    yueah_log_info("password_hash: %s", password_hash);
-    yueah_log_info("role: %s", role);
+    yueah_log_debug("(%s) Gotten Userid: %s", username_cstr, userid);
+    yueah_log_debug("(%s) Gotten username: %s", username_cstr, gotten_username);
+    yueah_log_debug("(%s) Gotten password_hash: %s", username_cstr,
+                    password_hash);
+    yueah_log_debug("(%s) Gotten role: %s", username_cstr, role);
 
+    user_buf->username = (yueah_string_t *)username;
     user_buf->userid =
-        yueah_strdup(pool, (const char *)userid, strlen((char *)userid) + 1);
-    user_buf->username = yueah_strdup(pool, (const char *)username,
-                                      strlen((char *)username) + 1);
-    user_buf->password_hash = yueah_strdup(pool, (const char *)password_hash,
-                                           strlen((char *)password_hash) + 1);
-    user_buf->role =
-        yueah_strdup(pool, (const char *)role, strlen((char *)role) + 1);
+        yueah_string_new(pool, (cstr *)userid, strlen((cstr *)userid));
+    user_buf->password_hash = yueah_string_new(pool, (cstr *)password_hash,
+                                               strlen((cstr *)password_hash));
+    user_buf->role = yueah_string_new(pool, (cstr *)role, strlen((cstr *)role));
 
     rc = sqlite3_step(stmt);
   } else if (rc == SQLITE_DONE) {
-    yueah_log_info("User %s not found", username);
-    *err = (yueah_sql_err_t){NotFound, 0};
+    *error = yueah_throw_error("User %s not found", username_cstr);
     sqlite3_finalize(stmt);
-    return -1;
+    return NULL;
   }
-
-  if (user_buf->userid == NULL) {
-    yueah_log_error("Failed to get user: no userid");
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  if (user_buf->username == NULL) {
-    yueah_log_error("Failed to get user: no username");
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  if (user_buf->password_hash == NULL) {
-    yueah_log_error("Failed to get user: no password_hash");
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  if (user_buf->role == NULL) {
-    yueah_log_error("Failed to get user: no role");
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  if (rc != SQLITE_DONE) {
-    yueah_log_error("Failed to get user: %d:%s", sqlite3_errcode(conn),
-                    sqlite3_errmsg(conn));
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
-    sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  *user = user_buf;
 
   sqlite3_finalize(stmt);
-  return 0;
+  *error = yueah_success(NULL);
+  return user_buf;
 }
 
-static int query_blacklist(sqlite3 *conn, const char *token,
-                           yueah_sql_err_t *err) {
+static yueah_error_t query_blacklist(h2o_mem_pool_t *pool, sqlite3 *conn,
+                                     const yueah_string_t *token) {
   int rc = 0;
-  int fn_rc = 0;
   int exists = 0;
 
   sqlite3_stmt *stmt;
-  const char *sql =
+  const cstr *sql =
       "SELECT EXISTS(SELECT 1 FROM refresh_blacklist WHERE token = ?);";
 
   rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
-  if (rc != SQLITE_OK) {
-    yueah_log_error("Failed to prepare statement: %d:%s", sqlite3_errcode(conn),
-                    sqlite3_errmsg(conn));
-    *err = (yueah_sql_err_t){.err_type = StmtPrepare, 0};
-    return -1;
-  }
+  if (rc != SQLITE_OK)
+    return yueah_throw_error("Failed to prepare statement: %d:%s",
+                             sqlite3_errcode(conn), sqlite3_errmsg(conn));
 
-  rc = sqlite3_bind_text(stmt, 1, token, -1, SQLITE_STATIC);
+  cstr *token_cstr = yueah_string_to_cstr(pool, token);
+  rc = sqlite3_bind_text(stmt, 1, token_cstr, -1, SQLITE_STATIC);
   if (rc != SQLITE_OK) {
-    yueah_log_error("Failed to bind token to blacklist query: %d:%s",
-                    sqlite3_errcode(conn), sqlite3_errmsg(conn));
-    *err = (yueah_sql_err_t){.err_type = Bind, 0};
     sqlite3_finalize(stmt);
-    return -1;
+    return yueah_throw_error("Failed to bind token to blacklist query: %d:%s",
+                             sqlite3_errcode(conn), sqlite3_errmsg(conn));
   }
 
   rc = sqlite3_step(stmt);
@@ -360,569 +222,549 @@ static int query_blacklist(sqlite3 *conn, const char *token,
   }
 
   if (rc != SQLITE_DONE) {
-    yueah_log_error("Failed to get blacklist: %d:%s", sqlite3_errcode(conn),
-                    sqlite3_errmsg(conn));
-    *err = (yueah_sql_err_t){.err_type = Fetch, 0};
     sqlite3_finalize(stmt);
-    return -1;
-  }
-
-  if (exists == 1) {
-    fn_rc = -1;
-    *err = (yueah_sql_err_t){.err_type = TokenIsBlacklisted, 0};
+    return yueah_throw_error("Failed to get blacklist: %d:%s",
+                             sqlite3_errcode(conn), sqlite3_errmsg(conn));
   }
 
   sqlite3_finalize(stmt);
-  return fn_rc;
+  return exists == 1 ? yueah_throw_error("Token is blacklisted")
+                     : yueah_success(NULL);
 }
-static int insert_blacklist(sqlite3 *conn, char *token, yueah_sql_err_t *err) {
+static yueah_error_t insert_blacklist(h2o_mem_pool_t *pool, sqlite3 *conn,
+                                      yueah_string_t *token) {
   int rc = 0;
   sqlite3_stmt *stmt;
-
-  const char *sql = "INSERT INTO refresh_blacklist (token) VALUES (?);";
+  const cstr *sql = "INSERT INTO refresh_blacklist (token) VALUES (?);";
 
   rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
-  if (rc != SQLITE_OK) {
-    yueah_log_error("Failed to prepare statement: %d:%s", sqlite3_errcode(conn),
-                    sqlite3_errmsg(conn));
-    *err = (yueah_sql_err_t){.err_type = StmtPrepare, 0};
-    return -1;
-  }
+  if (rc != SQLITE_OK)
+    return yueah_throw_error("Failed to prepare statement: %d:%s",
+                             sqlite3_errcode(conn), sqlite3_errmsg(conn));
 
-  sqlite3_bind_text(stmt, 1, token, -1, SQLITE_STATIC);
+  cstr *token_cstr = yueah_string_to_cstr(pool, token);
+  sqlite3_bind_text(stmt, 1, token_cstr, -1, SQLITE_STATIC);
   rc = sqlite3_step(stmt);
   if (rc != SQLITE_DONE) {
-    yueah_log_error("Failed to add to blacklist: %d:%s", sqlite3_errcode(conn),
-                    sqlite3_errmsg(conn));
-    *err = (yueah_sql_err_t){.err_type = Insert, 0};
     sqlite3_finalize(stmt);
-    return -1;
+    return yueah_throw_error("Failed to add to blacklist: %d:%s",
+                             sqlite3_errcode(conn), sqlite3_errmsg(conn));
   }
 
   sqlite3_finalize(stmt);
-  return 0;
+  return yueah_success(NULL);
 }
 
 int post_register_form(h2o_handler_t *handler, h2o_req_t *req) {
   yueah_handler_t *yueah_handler = (yueah_handler_t *)handler;
   yueah_state_t *yueah_state = yueah_handler->state;
+  h2o_mem_pool_t *pool = &req->pool;
 
   if (h2o_memis(req->method.base, req->method.len, H2O_STRLIT("OPTIONS")))
     return yueah_handle_options(req, yueah_state->cors->public);
 
   yueah_add_cors_headers(req, yueah_state->cors->public);
 
-  yueah_verify_err_t verify_err = verify_headers(
-      req, H2O_STRLIT("POST"), H2O_STRLIT("application/x-www-form-urlencoded"));
-  if (verify_err != Success)
-    switch (verify_err) {
-    case MethodNotAllowed:
-      return generic_response(req, 405, "Method not allowed");
-    case FailedToFindContentType:
-      return generic_response(req, 400,
-                              "Failed to find header for Content-Type");
-    case WrongContentType:
-      return generic_response(
-          req, 400, "Content-Type is not application/x-www-form-urlencoded");
-    default:
-      return generic_response(req, 500, "Unknown error");
-    }
+  yueah_error_t verify_err = verify_headers(
+      req, YUEAH_STR("POST"), YUEAH_STR("application/x-www-form-urlencoded"));
+  if (verify_err.status != OK) {
+    if (strcmp(verify_err.message, "Method not allowed") == 0)
+      return yueah_generic_response(req, 405, YUEAH_STR("Method not allowed"));
+    if (strcmp(verify_err.message, "Failed to find header for Content-Type") ==
+        0)
+      return yueah_generic_response(
+          req, 400, YUEAH_STR("Failed to find header for Content-Type"));
+    if (strcmp(verify_err.message,
+               "Content-Type is not application/x-www-form-urlencoded") == 0)
+      return yueah_generic_response(
+          req, 400,
+          YUEAH_STR("Content-Type is not application/x-www-form-urlencoded"));
+
+    return yueah_generic_response(req, 500, YUEAH_STR("Unknown error"));
+  }
 
   yueah_user_t *user = h2o_mem_alloc_pool(&req->pool, yueah_user_t, 1);
   sqlite3 *db;
 
-  char *form_body = yueah_iovec_to_str(&req->pool, &req->entity);
-  char **body = parse_post_body(&req->pool, form_body, req->entity.len);
+  yueah_error_t error = yueah_success(NULL);
+  yueah_string_t *form_body = yueah_string_from_iovec(pool, &req->entity);
+  yueah_string_array_t *form_data =
+      yueah_parse_form_body(pool, form_body, &error);
+  if (!form_data) {
+    yueah_print_error(error);
+    return yueah_generic_response(
+        req, 500, YUEAH_STR("Failed to parse form, is your form empty?"));
+  }
 
-  user->username = get_form_val(&req->pool, "username", body);
+  user->username =
+      yueah_get_form_val(pool, YUEAH_STR("username"), form_data, &error);
   if (!user->username) {
-    yueah_log_error("Failed to get username");
-    return generic_response(req, 400, "Failed to get username");
+    yueah_print_error(error);
+    return yueah_generic_response(
+        req, 400, YUEAH_STR("Failed to get username, is the form malformed?"));
   }
 
-  char *password = get_form_val(&req->pool, "password", body);
+  yueah_string_t *password =
+      yueah_get_form_val(pool, YUEAH_STR("password"), form_data, &error);
   if (!password) {
-    yueah_log_error("Failed to get password");
-    return generic_response(req, 400, "Failed to get password");
+    yueah_print_error(error);
+    return yueah_generic_response(
+        req, 400, YUEAH_STR("Failed to get password, is the form malformed?"));
   }
 
-  user->password_hash = hash_password(&req->pool, password, strlen(password));
-
+  user->password_hash = hash_password(pool, password, &error);
   if (!user->password_hash) {
-    yueah_log_error("Failed to hash password");
-    return generic_response(req, 400, "Failed to hash password");
+    yueah_print_error(error);
+    return yueah_generic_response(
+        req, 500,
+        YUEAH_STR("Failed to hash password, something went very wrong"));
   }
 
-  char *uuid = yueah_uuid_new(&req->pool);
+  yueah_string_t *uuid = yueah_uuid_new(pool);
   if (!uuid) {
-    yueah_log_error("Failed to generate uuid");
-    return generic_response(req, 400, "Failed to generate uuid");
+    yueah_log_error("Failed to generate uuid, something is very wrong");
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to generate uuid"));
   }
 
   user->userid = uuid;
-  user->role = yueah_strdup(&req->pool, "poster", 7);
+  user->role = yueah_string_new(pool, "poster", 6);
 
-  if (yueah_db_connect(yueah_state->db_path, &db, READ | WRITE) != 0) {
-    yueah_log_error("Failed to connect to db");
-    return generic_response(req, 500, "Failed to connect to db");
+  error = yueah_db_connect(pool, yueah_state->db_path, &db, READ | WRITE);
+  if (error.status != OK) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to connect to db"));
   }
 
-  yueah_sql_err_t err = {0};
-  if (insert_user(db, user, &err) != 0) {
-    char *err_msg = h2o_mem_alloc_pool(&req->pool, char, 1024);
-    int status = 500;
+  error = insert_user(pool, db, user);
+  if (error.status != OK) {
+    yueah_print_error(error);
+    yueah_string_t *err_msg = yueah_string_new(pool, NULL, 1024);
+    u16 status = 500;
 
-    switch (err.err_type) {
-    case StmtPrepare:
-      memcpy(err_msg, "Failed to prepare SQL statement", 25);
-      break;
-    case ConstraintErr:
-      switch (err.constraint_err) {
-      case Username:
-        snprintf(err_msg, 1024, "User %s already exists", user->username);
-        status = 400;
-        break;
-      case UserID:
-        memcpy(err_msg, "UserID already exists (this should never happen)", 48);
-        break;
-      default:
-        memcpy(err_msg, "Unknown error", 13);
-        break;
-      }
-      break;
-    default:
-      memcpy(err_msg, "Unknown error", 13);
-      break;
+    if (strstr(error.message, "UNIQUE constraint failed: users.username") !=
+        NULL) {
+      err_msg->len =
+          snprintf((cstr *)err_msg->data, 1024, "User already exists");
+      status = 400;
+    } else if (strstr(error.message,
+                      "UNIQUE constraint failed: users.userid") != NULL) {
+      err_msg->len =
+          snprintf((cstr *)err_msg->data, 1024, "User already exists");
+      status = 400;
+    } else {
+      err_msg->len = snprintf((cstr *)err_msg->data, 1024, "Unknown error");
+      status = 500;
     }
 
-    return generic_response(req, status, err_msg);
+    return yueah_generic_response(req, status, err_msg);
   }
 
-  if (yueah_db_disconnect(db) != 0) {
-    yueah_log_error("Failed to disconnect from db");
-    return generic_response(req, 500, "Failed to disconnect from db");
+  error = yueah_db_disconnect(db);
+  if (error.status != OK) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to disconnect from db"));
   }
 
-  char *message = h2o_mem_alloc_pool(&req->pool, char, 1024);
-  snprintf(message, 1024, "Register of %s:%s successful", user->username,
-           user->userid);
+  cstr *username_cstr = yueah_string_to_cstr(pool, user->username);
+  cstr *userid_cstr = yueah_string_to_cstr(pool, user->userid);
 
-  return generic_response(req, 200, message);
+  yueah_string_t *message = yueah_string_new(pool, NULL, 1024);
+  message->len =
+      snprintf((cstr *)message->data, 1024, "Register of %s:%s successful",
+               username_cstr, userid_cstr);
+
+  return yueah_generic_response(req, 200, message);
 }
 
 int post_login_form(h2o_handler_t *handler, h2o_req_t *req) {
   yueah_handler_t *yueah_handler = (yueah_handler_t *)handler;
   yueah_state_t *yueah_state = yueah_handler->state;
+  h2o_mem_pool_t *pool = &req->pool;
 
   if (h2o_memis(req->method.base, req->method.len, H2O_STRLIT("OPTIONS")))
     return yueah_handle_options(req, yueah_state->cors->public);
 
   yueah_add_cors_headers(req, yueah_state->cors->public);
 
-  yueah_verify_err_t verify_err = verify_headers(
-      req, H2O_STRLIT("POST"), H2O_STRLIT("application/x-www-form-urlencoded"));
-  if (verify_err != Success)
-    switch (verify_err) {
-    case MethodNotAllowed:
-      return generic_response(req, 405, "Method not allowed");
-    case FailedToFindContentType:
-      return generic_response(req, 400,
-                              "Failed to find header for Content-Type");
-    case WrongContentType:
-      return generic_response(
-          req, 400, "Content-Type is not application/x-www-form-urlencoded");
-    default:
-      return generic_response(req, 500, "Unknown error");
-    }
+  yueah_error_t verify_err = verify_headers(
+      req, YUEAH_STR("POST"), YUEAH_STR("application/x-www-form-urlencoded"));
+  if (verify_err.status != OK) {
+    if (strcmp(verify_err.message, "Method not allowed") == 0)
+      return yueah_generic_response(req, 405, YUEAH_STR("Method not allowed"));
+    if (strcmp(verify_err.message, "Failed to find header for Content-Type") ==
+        0)
+      return yueah_generic_response(
+          req, 400, YUEAH_STR("Failed to find header for Content-Type"));
+    if (strcmp(verify_err.message,
+               "Content-Type is not application/x-www-form-urlencoded") == 0)
+      return yueah_generic_response(
+          req, 400,
+          YUEAH_STR("Content-Type is not application/x-www-form-urlencoded"));
 
-  char *form_body = yueah_iovec_to_str(&req->pool, &req->entity);
-  char **body = parse_post_body(&req->pool, form_body, req->entity.len);
+    return yueah_generic_response(req, 500, YUEAH_STR("Unknown error"));
+  }
 
-  char *username = get_form_val(&req->pool, "username", body);
-  if (!username)
-    return generic_response(req, 400, "Failed to get username from form");
-
-  char *password = get_form_val(&req->pool, "password", body);
-  if (!password)
-    return generic_response(req, 400, "Failed to get password from form");
-
-  yueah_user_t *user = {0};
   sqlite3 *db;
-
-  if (yueah_db_connect(yueah_state->db_path, &db, READ) != 0) {
-    yueah_log_error("Failed to connect to db");
-    return generic_response(req, 500, "Failed to connect to db");
+  yueah_error_t error = yueah_success(NULL);
+  yueah_string_t *form_body = yueah_string_from_iovec(pool, &req->entity);
+  yueah_string_array_t *form_data =
+      yueah_parse_form_body(pool, form_body, &error);
+  if (!form_data) {
+    yueah_print_error(error);
+    return yueah_generic_response(
+        req, 500, YUEAH_STR("Failed to parse form, is your form empty?"));
   }
 
-  yueah_sql_err_t err = {0};
-  int rc = get_user(&req->pool, db, username, &user, &err);
-  if (rc != 0) {
-    char *err_msg = h2o_mem_alloc_pool(&req->pool, char, 1024);
-    int status = 500;
+  yueah_string_t *username =
+      yueah_get_form_val(pool, YUEAH_STR("username"), form_data, &error);
+  if (!username) {
+    yueah_print_error(error);
+    return yueah_generic_response(
+        req, 400, YUEAH_STR("Failed to get username, is your form malformed?"));
+  }
 
-    switch (err.err_type) {
-    case NotFound:
-      strlcpy(err_msg, "Invalid username or password", 1024);
+  yueah_string_t *password =
+      yueah_get_form_val(pool, YUEAH_STR("password"), form_data, &error);
+  if (!password) {
+    yueah_print_error(error);
+    return yueah_generic_response(
+        req, 400, YUEAH_STR("Failed to get password, is your form malformed?"));
+  }
+
+  error = yueah_db_connect(pool, yueah_state->db_path, &db, READ);
+  if (error.status != OK) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to connect to db"));
+  }
+
+  yueah_user_t *user = get_user(pool, db, username, &error);
+  if (!user) {
+    yueah_print_error(error);
+    yueah_string_t *err_msg = yueah_string_new(pool, NULL, 1024);
+    u16 status = 500;
+
+    if (strstr(error.message, "User") != NULL) {
+      err_msg->len = snprintf((cstr *)err_msg->data, 1024, "User not found");
       status = 401;
-      break;
-    case Fetch:
-      strlcpy(err_msg, "Failed to fetch user", 1024);
-      break;
-    case IncompleteTable:
-      strlcpy(err_msg, "User table is incomplete", 1024);
-      break;
-    case StmtPrepare:
-      strlcpy(err_msg, "Failed to prepare SQL statement", 1024);
-      break;
-    default:
-      strlcpy(err_msg, "Unknown error", 1024);
-      break;
+    } else {
+      err_msg->len = snprintf((cstr *)err_msg->data, 1024, "Unknown error");
+      status = 500;
     }
-    return generic_response(req, status, err_msg);
+
+    error = yueah_db_disconnect(db);
+    if (error.status != OK)
+      yueah_print_error(error);
+
+    return yueah_generic_response(req, status, err_msg);
   }
 
-  if (yueah_db_disconnect(db) != 0) {
-    yueah_log_error("Failed to disconnect from db");
-    return generic_response(req, 500, "Failed to disconnect from db");
+  error = yueah_db_disconnect(db);
+  if (error.status != OK) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to disconnect from db"));
   }
 
-  if (!verify_password(user->password_hash, password, strlen(password)))
-    return generic_response(req, 401, "Invalid username or password");
+  if (!verify_password(pool, password, user->password_hash))
+    return yueah_generic_response(req, 401,
+                                  YUEAH_STR("Invalid username or password"));
 
-  yueah_jwt_claims_t *session_claims = yueah_jwt_create_claims(
-      &req->pool, "yueah", user->userid, "blog", 900 * 12, 0);
-  yueah_jwt_claims_t *refresh_claims = yueah_jwt_create_claims(
-      &req->pool, "yueah", user->userid, "blog", 604800, 900);
+  yueah_jwt_claims_t *session_claims =
+      yueah_jwt_create_claims(&req->pool, YUEAH_STR("yueah"), user->userid,
+                              YUEAH_STR("blog"), 900 * 12, 0, &error);
+  yueah_jwt_claims_t *refresh_claims =
+      yueah_jwt_create_claims(&req->pool, YUEAH_STR("yueah"), user->userid,
+                              YUEAH_STR("blog"), 604800, 900, &error);
 
-  mem_t session_token_len = 0;
-  mem_t refresh_token_len = 0;
-
-  char *session_token =
-      yueah_jwt_encode(&req->pool, session_claims, Access, &session_token_len);
-  if (!session_token || session_token_len < 10) {
-    yueah_log_error("Failed to encode session token");
-    return generic_response(req, 500, "Failed to encode session token");
+  yueah_string_t *session_token =
+      yueah_jwt_encode(&req->pool, session_claims, Access, &error);
+  if (!session_token || session_token->len < 10) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to encode token"));
   }
 
-  char *refresh_token =
-      yueah_jwt_encode(&req->pool, refresh_claims, Refresh, &refresh_token_len);
-  if (!refresh_token || refresh_token_len < 10) {
-    yueah_log_error("Failed to encode refresh token");
-    return generic_response(req, 500, "Failed to encode refresh token");
+  yueah_string_t *refresh_token =
+      yueah_jwt_encode(&req->pool, refresh_claims, Refresh, &error);
+  if (!refresh_token || refresh_token->len < 10) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500, YUEAH_STR("Failed to token"));
   }
 
-  char *session_cookie_content =
-      h2o_mem_alloc_pool(&req->pool, char, session_token_len);
-  memcpy(session_cookie_content, session_token, session_token_len);
+  yueah_string_t *session_cookie =
+      yueah_cookie_new(&req->pool, YUEAH_STR("yueah_session"), session_token,
+                       &error, HTTP_ONLY | MAX_AGE, 900);
+  if (!session_cookie) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to create cookie"));
+  }
 
-  char *refresh_cookie_content =
-      h2o_mem_alloc_pool(&req->pool, char, refresh_token_len);
-  memcpy(refresh_cookie_content, refresh_token, refresh_token_len);
+  h2o_add_header(pool, &req->res.headers, H2O_TOKEN_SET_COOKIE, "Set-Cookie",
+                 YUEAH_SSTRLIT(session_cookie));
 
-  mem_t session_cookie_len = 0;
-  unsigned char *session_cookie = yueah_cookie_new(
-      &req->pool, "yueah_session", session_cookie_content, session_token_len,
-      &session_cookie_len, HTTP_ONLY | MAX_AGE, 900);
+  yueah_string_t *refresh_cookie =
+      yueah_cookie_new(pool, YUEAH_STR("yueah_refresh"), refresh_token, &error,
+                       HTTP_ONLY | MAX_AGE, 604800);
+  if (!refresh_cookie) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to create cookie"));
+  }
 
-  h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_SET_COOKIE,
-                 "Set-Cookie", (const char *)session_cookie,
-                 session_cookie_len);
+  h2o_add_header(pool, &req->res.headers, H2O_TOKEN_SET_COOKIE, "Set-Cookie",
+                 YUEAH_SSTRLIT(refresh_cookie));
 
-  mem_t refresh_cookie_len = 0;
-  unsigned char *refresh_cookie = yueah_cookie_new(
-      &req->pool, "yueah_refresh", refresh_cookie_content, refresh_token_len,
-      &refresh_cookie_len, HTTP_ONLY | MAX_AGE, 604800);
-
-  h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_SET_COOKIE,
-                 "Set-Cookie", (const char *)refresh_cookie,
-                 refresh_cookie_len);
-
-  return generic_response(req, 200, "Login successful");
+  return yueah_generic_response(req, 200, YUEAH_STR("Login successful"));
 }
 
+/*
 static void check_time(const char *label, clock_t before, clock_t after) {
   double diff = ((double)(after - before)) / CLOCKS_PER_SEC;
   yueah_log_debug("%s: %f s", label, diff);
 }
-
+*/
 int get_refresh(h2o_handler_t *handler, h2o_req_t *req) {
 
   yueah_handler_t *yueah_handler = (yueah_handler_t *)handler;
   yueah_state_t *yueah_state = yueah_handler->state;
   sqlite3 *db;
-
-  clock_t before = clock();
+  yueah_error_t error = yueah_success(NULL);
+  h2o_mem_pool_t *pool = &req->pool;
 
   if (h2o_memis(req->method.base, req->method.len, H2O_STRLIT("OPTIONS")))
     return yueah_handle_options(req, yueah_state->cors->private);
 
   yueah_add_cors_headers(req, yueah_state->cors->private);
 
-  clock_t after = clock();
+  yueah_error_t verify_err = verify_headers(req, YUEAH_STR("GET"), NULL);
+  if (verify_err.status != OK) {
+    if (strcmp(verify_err.message, "Method not allowed") == 0)
+      return yueah_generic_response(req, 405, YUEAH_STR("Method not allowed"));
 
-  check_time("Time taken to check for OPTIONS and add CORS", before, after);
+    return yueah_generic_response(req, 500, YUEAH_STR("Unknown error"));
+  }
 
-  before = clock();
-
-  yueah_verify_err_t verify_err =
-      verify_headers(req, H2O_STRLIT("GET"), NULL, 0);
-  if (verify_err != Success)
-    switch (verify_err) {
-    case MethodNotAllowed:
-      return generic_response(req, 405, "Method not allowed");
-    default:
-      return generic_response(req, 500, "Unknown error");
-    }
-
-  after = clock();
-  check_time("Time taken to verify headers", before, after);
-
-  before = clock();
   int throwaway_cursor = 0;
   int throwaway_cookie_index =
       h2o_find_header(&req->headers, H2O_TOKEN_COOKIE, throwaway_cursor);
 
-  if (throwaway_cookie_index == -1) {
-    return generic_response(req, 400, "No cookie header found");
+  if (throwaway_cookie_index == -1)
+    return yueah_generic_response(req, 400, YUEAH_STR("No cookie found"));
+
+  yueah_string_t *refresh_cookie_header =
+      yueah_req_get_cookie_content(req, YUEAH_STR("yueah_refresh"), &error);
+  if (!refresh_cookie_header) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 400,
+                                  YUEAH_STR("No refresh cookie header found"));
   }
-  after = clock();
-  check_time("Time taken to see if any cookie exists", before, after);
 
-  before = clock();
-  h2o_iovec_t *refresh_cookie_header = get_cookie_content(req, "yueah_refresh");
-  if (refresh_cookie_header == NULL)
-    return generic_response(req, 400, "No refresh cookie header found");
-  after = clock();
-  check_time("Time taken to get refresh cookie", before, after);
-
-  before = clock();
   bool session_expired = false;
-  h2o_iovec_t *session_cookie_header = get_cookie_content(req, "yueah_session");
-  if (session_cookie_header == NULL)
+  yueah_string_t *session_cookie_header =
+      yueah_req_get_cookie_content(req, YUEAH_STR("yueah_session"), &error);
+  if (!session_cookie_header)
     session_expired = true;
-  after = clock();
-  check_time("Time taken to get session cookie", before, after);
 
-  before = clock();
   if (!session_expired) {
-    mem_t out_len = 0;
-    char *session_cookie_str =
-        yueah_iovec_to_str(&req->pool, session_cookie_header);
+    yueah_string_t *session_cookie_content = yueah_get_cookie_content(
+        pool, session_cookie_header, YUEAH_STR("yueah_session"), &error);
+    if (!session_cookie_content) {
+      yueah_print_error(error);
+      return yueah_generic_response(req, 401,
+                                    YUEAH_STR("Invalid session cookie"));
+    }
 
-    unsigned char *session_cookie_content = yueah_get_cookie_content(
-        &req->pool, session_cookie_str, "yueah_session", &out_len);
-
-    yueah_log_debug("Session cookie content: %s", session_cookie_content);
-
-    if (yueah_jwt_verify(&req->pool, (char *)session_cookie_content, out_len,
-                         "blog", Access) == false) {
-      return generic_response(req, 401, "Invalid session cookie");
+    if (yueah_jwt_verify(pool, session_cookie_content, YUEAH_STR("blog"),
+                         Access, &error) == false) {
+      if (error.status != OK)
+        yueah_print_error(error);
+      return yueah_generic_response(req, 401,
+                                    YUEAH_STR("Invalid session cookie"));
     }
   }
-  after = clock();
-  check_time("Time taken to verify session cookie", before, after);
 
-  before = clock();
-
-  mem_t out_len = 0;
-  char *refresh_cookie_str =
-      yueah_iovec_to_str(&req->pool, refresh_cookie_header);
-  unsigned char *refresh_cookie_content = yueah_get_cookie_content(
-      &req->pool, refresh_cookie_str, "yueah_refresh", &out_len);
-  if (!refresh_cookie_content || out_len < 10)
-    return generic_response(req, 400, "Failed to get refresh cookie content");
-
-  if (yueah_jwt_verify(&req->pool, (char *)refresh_cookie_content, out_len,
-                       "blog", Refresh) == false)
-    return generic_response(req, 401, "Invalid refresh cookie");
-
-  after = clock();
-  check_time("Time taken to verify refresh cookie", before, after);
-
-  before = clock();
-  if (yueah_db_connect(yueah_state->db_path, &db, READ | WRITE) != 0) {
-    yueah_log_error("Failed to connect to db");
-    return generic_response(req, 500, "Failed to connect to db");
+  yueah_string_t *refresh_cookie_content = yueah_get_cookie_content(
+      pool, refresh_cookie_header, YUEAH_STR("yueah_refresh"), &error);
+  if (!refresh_cookie_content) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 400,
+                                  YUEAH_STR("Failed to get refresh cookie"));
   }
-  after = clock();
-  check_time("Time taken to connect to db", before, after);
 
-  yueah_sql_err_t query_err = {0};
+  if (yueah_jwt_verify(pool, refresh_cookie_content, YUEAH_STR("blog"), Refresh,
+                       &error) == false) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 401,
+                                  YUEAH_STR("Invalid refresh cookie"));
+  }
 
-  before = clock();
-  if (query_blacklist(db, (char *)refresh_cookie_content, &query_err) != 0) {
-    char *err_msg = h2o_mem_alloc_pool(&req->pool, char, 1024);
+  error = yueah_db_connect(pool, yueah_state->db_path, &db, READ | WRITE);
+  if (error.status != OK) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to connect to db"));
+  }
+
+  yueah_error_t disconnect_error = yueah_success(NULL);
+  error = query_blacklist(pool, db, refresh_cookie_content);
+  if (error.status != OK) {
+    yueah_print_error(error);
+
+    disconnect_error = yueah_db_disconnect(db);
+    if (disconnect_error.status != OK)
+      yueah_print_error(disconnect_error);
+
+    if (strstr(error.message, "Token") != NULL) {
+      return yueah_generic_response(
+          req, 401, YUEAH_STR("Can't refresh, Token is blacklisted"));
+    } else if (strstr(error.message, "Failed to prepare") != NULL) {
+      return yueah_generic_response(
+          req, 500, YUEAH_STR("Failed to prepare SQL statement"));
+    }
+
+    return yueah_generic_response(
+        req, 401, YUEAH_STR("Unable to refresh, unknown error"));
+  }
+
+  error = insert_blacklist(pool, db, refresh_cookie_content);
+  if (error.status != OK) {
+    yueah_string_t *err_msg = yueah_string_new(pool, NULL, 1024);
     int status = 500;
 
-    if (query_err.err_type == TokenIsBlacklisted) {
-      if (yueah_db_disconnect(db) != 0) {
-        yueah_log_error("Failed to disconnect from db");
-        return generic_response(req, 500, "Failed to disconnect from db");
-      }
+    disconnect_error = yueah_db_disconnect(db);
+    if (disconnect_error.status != OK)
+      yueah_print_error(disconnect_error);
 
-      return generic_response(req, 401,
-                              "Invalid refresh cookie, token is blacklisted");
+    if (strstr(error.message, "Failed to add") != NULL) {
+      err_msg->len = snprintf((cstr *)err_msg->data, 1024,
+                              "Failed to add Token to blacklist.");
+      status = 500;
+    } else if (strstr(error.message, "Failed to prepare") != NULL) {
+      err_msg->len = snprintf((cstr *)err_msg->data, 1024,
+                              "Failed to prepare SQL statement.");
+      status = 500;
+    } else {
+      err_msg->len = snprintf((cstr *)err_msg->data, 1024, "Unknown error");
+      status = 500;
     }
 
-    switch (query_err.err_type) {
-    case Fetch:
-      strlcpy(err_msg, "Failed to fetch token", 1024);
-      status = 500;
-      break;
-
-    case IncompleteTable:
-      strlcpy(err_msg, "Failed to fetch token: incomplete table", 1024);
-      status = 500;
-      break;
-
-    case NotFound:
-      strlcpy(err_msg, "Invalid token", 1024);
-      status = 401;
-      break;
-    case StmtPrepare:
-      strlcpy(err_msg, "Failed to prepare SQL statement", 1024);
-      status = 500;
-      break;
-    default:
-      strlcpy(err_msg, "Unknown error", 1024);
-      status = 500;
-      break;
-    }
-
-    if (yueah_db_disconnect(db) != 0) {
-      yueah_log_error("Failed to disconnect from db");
-      return generic_response(req, 500, "Failed to disconnect from db");
-    }
-
-    return generic_response(req, status, err_msg);
+    return yueah_generic_response(req, status, err_msg);
   }
-  after = clock();
-  check_time("Time taken to query blacklist", before, after);
 
-  before = clock();
-  yueah_sql_err_t insert_err = {0};
-  if (insert_blacklist(db, (char *)refresh_cookie_content, &insert_err) != 0) {
-    char *err_msg = h2o_mem_alloc_pool(&req->pool, char, 1024);
-    int status = 500;
+  yueah_string_t *user_sub =
+      yueah_jwt_get_sub(pool, refresh_cookie_content, &error);
+  if (!user_sub) {
+    yueah_print_error(error);
 
-    switch (insert_err.err_type) {
-    case StmtPrepare:
-      strlcpy(err_msg, "Failed to prepare SQL statement", 1024);
-      status = 500;
-      break;
-    case IncompleteTable:
-      strlcpy(err_msg, "Failed to fetch token: incomplete table", 1024);
-      status = 500;
-      break;
-    case Insert:
-      strlcpy(err_msg, "Failed to insert token into blacklist", 1024);
-      status = 500;
-      break;
-    default:
-      strlcpy(err_msg, "Unknown error", 1024);
-      status = 500;
-      break;
-    }
+    disconnect_error = yueah_db_disconnect(db);
+    if (disconnect_error.status != OK)
+      yueah_print_error(disconnect_error);
 
-    if (yueah_db_disconnect(db) != 0) {
-      yueah_log_error("Failed to disconnect from db");
-      return generic_response(req, 500, "Failed to disconnect from db");
-    }
-
-    return generic_response(req, status, err_msg);
+    return yueah_generic_response(req, 500, YUEAH_STR("Failed to get user"));
   }
-  after = clock();
-  check_time("Time taken to insert into blacklist", before, after);
 
-  before = clock();
-  char *user_sub =
-      yueah_jwt_get_sub(&req->pool, (char *)refresh_cookie_content, out_len);
-  yueah_user_t *user = {0};
-  if (get_user_userid(&req->pool, db, user_sub, &user, &query_err) != 0) {
-    char *err_msg = h2o_mem_alloc_pool(&req->pool, char, 1024);
-    int status = 500;
+  yueah_user_t *user = get_user_userid(pool, db, user_sub, &error);
+  if (!user) {
+    yueah_print_error(error);
 
-    switch (query_err.err_type) {
-    case NotFound:
-      memcpy(err_msg, "Could not find user", 20);
-      status = 401;
-      break;
-    case Fetch:
-      memcpy(err_msg, "Failed to fetch user", 19);
-      break;
-    case IncompleteTable:
-      memcpy(err_msg, "User table is incomplete", 24);
-      break;
-    case StmtPrepare:
-      memcpy(err_msg, "Failed to prepare SQL statement", 25);
-      break;
-    default:
-      memcpy(err_msg, "Unknown error", 13);
-      break;
-    }
-    if (yueah_db_disconnect(db) != 0) {
-      yueah_log_error("Failed to disconnect from db");
-      return generic_response(req, 500, "Failed to disconnect from db");
-    }
+    disconnect_error = yueah_db_disconnect(db);
+    if (disconnect_error.status != OK)
+      yueah_print_error(disconnect_error);
 
-    return generic_response(req, status, err_msg);
+    if (strstr(error.message, "Failed to prepare") != NULL)
+      return yueah_generic_response(
+          req, 500, YUEAH_STR("Failed to prepare SQL statement"));
+    if (strstr(error.message, "User") != NULL)
+      return yueah_generic_response(req, 401, YUEAH_STR("Could not find user"));
+
+    return yueah_generic_response(req, 500, YUEAH_STR("Failed to get user"));
   }
-  after = clock();
-  check_time("Time taken to get user", before, after);
 
-  before = clock();
-  if (yueah_db_disconnect(db) != 0) {
-    yueah_log_error("Failed to disconnect from db");
-    return generic_response(req, 500, "Failed to disconnect from db");
+  disconnect_error = yueah_db_disconnect(db);
+  if (disconnect_error.status != OK) {
+    yueah_print_error(disconnect_error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to disconnect from db"));
   }
-  after = clock();
-  check_time("Time taken to disconnect from db", before, after);
 
-  before = clock();
-  int success = yueah_delete_cookie(req);
-  if (success == -1) {
-    yueah_log_error("Failed to delete cookie");
-    return generic_response(req, 500, "Failed to delete cookie");
+  error = yueah_req_delete_cookie(req);
+  if (error.status != OK) {
+    yueah_print_error(error);
+    if (strstr(error.message, "Failed to delete cookie") != NULL)
+      return yueah_generic_response(req, 500,
+                                    YUEAH_STR("Failed to delete old cookie"));
+    if (strstr(error.message, "Didn't find cookie") != NULL)
+      return yueah_generic_response(req, 400, YUEAH_STR("No cookie found"));
   }
-  after = clock();
-  check_time("Time taken to delete cookie", before, after);
 
-  before = clock();
-  yueah_jwt_claims_t *new_refresh_claims = yueah_jwt_create_claims(
-      &req->pool, "yueah", user->userid, "blog", 604800, 0);
+  yueah_jwt_claims_t *new_refresh_claims =
+      yueah_jwt_create_claims(pool, YUEAH_STR("yueah"), user->userid,
+                              YUEAH_STR("blog"), 604800, 0, &error);
+  if (!new_refresh_claims) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to create JWT claims"));
+  }
 
-  mem_t new_refresh_token_len = 0;
-  char *new_refresh_token = yueah_jwt_encode(&req->pool, new_refresh_claims,
-                                             Refresh, &new_refresh_token_len);
+  yueah_string_t *new_refresh_token =
+      yueah_jwt_encode(pool, new_refresh_claims, Refresh, &error);
+  if (!new_refresh_token) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500, YUEAH_STR("Failed to encode JWT"));
+  }
 
-  mem_t new_refresh_cookie_len = 0;
-  unsigned char *new_refresh_cookie = yueah_cookie_new(
-      &req->pool, "yueah_refresh", new_refresh_token, new_refresh_token_len,
-      &new_refresh_cookie_len, HTTP_ONLY | MAX_AGE, 604800);
-  h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_SET_COOKIE, NULL,
-                 (const char *)new_refresh_cookie, new_refresh_cookie_len);
-  after = clock();
-  check_time("Time taken to generate new refresh cookie", before, after);
+  yueah_string_t *new_refresh_cookie =
+      yueah_cookie_new(pool, YUEAH_STR("yueah_refresh"), new_refresh_token,
+                       &error, HTTP_ONLY | MAX_AGE);
+  if (!new_refresh_cookie) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to create cookie"));
+  }
 
-  before = clock();
-  yueah_jwt_claims_t *new_access_claims = yueah_jwt_create_claims(
-      &req->pool, "yueah", user->userid, "blog", 900, 0);
+  ssize_t idx = h2o_add_header(pool, &req->res.headers, H2O_TOKEN_SET_COOKIE,
+                               "Set-Cookie", YUEAH_SSTRLIT(new_refresh_cookie));
+  if (idx < 0) {
+    yueah_log_error("Failed to add Refresh Set-Cookie header, idx: %ld", idx);
+    return yueah_generic_response(req, 500, YUEAH_STR("Failed to add cookie"));
+  }
 
-  mem_t new_access_token_len = 0;
-  char *new_access_token = yueah_jwt_encode(&req->pool, new_access_claims,
-                                            Access, &new_access_token_len);
+  yueah_jwt_claims_t *new_access_claims =
+      yueah_jwt_create_claims(pool, YUEAH_STR("yueah"), user->userid,
+                              YUEAH_STR("blog"), 900, 0, &error);
+  if (!new_access_claims) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to create JWT claims"));
+  }
 
-  mem_t new_access_cookie_len = 0;
-  unsigned char *new_access_cookie = yueah_cookie_new(
-      &req->pool, "yueah", new_access_token, new_access_token_len,
-      &new_access_cookie_len, HTTP_ONLY | MAX_AGE, 900);
+  yueah_string_t *new_access_token =
+      yueah_jwt_encode(pool, new_access_claims, Access, &error);
+  if (!new_access_token) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500, YUEAH_STR("Failed to encode JWT"));
+  }
 
-  h2o_add_header(&req->pool, &req->res.headers, H2O_TOKEN_SET_COOKIE, NULL,
-                 (const char *)new_access_cookie, new_refresh_cookie_len);
-  after = clock();
-  check_time("Time taken to generate new access cookie", before, after);
+  yueah_string_t *new_access_cookie =
+      yueah_cookie_new(pool, YUEAH_STR("yueah"), new_access_token, &error,
+                       HTTP_ONLY | MAX_AGE, 900);
+  if (!new_access_cookie) {
+    yueah_print_error(error);
+    return yueah_generic_response(req, 500,
+                                  YUEAH_STR("Failed to create cookie"));
+  }
 
-  yueah_log_debug("Generated new tokens");
+  idx = h2o_add_header(pool, &req->res.headers, H2O_TOKEN_SET_COOKIE,
+                       "Set-Cookie", YUEAH_SSTRLIT(new_access_cookie));
+  if (idx < 0) {
+    yueah_log_error("Failed to add Access Set-Cookie header, idx: %ld", idx);
+    return yueah_generic_response(req, 500, YUEAH_STR("Failed to add cookie"));
+  }
 
-  return generic_response(req, 200, "Refresh successful");
+  return yueah_generic_response(req, 200, YUEAH_STR("Refresh successful"));
 }

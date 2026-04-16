@@ -16,7 +16,7 @@ yueah_string_t *get_cwd(h2o_mem_pool_t *pool, yueah_error_t *error) {
     return NULL;
   }
 
-  return yueah_string_new(pool, cwd, 1024);
+  return yueah_string_new(pool, cwd, strlen(cwd));
 }
 
 yueah_error_t make_dir(h2o_mem_pool_t *pool, const yueah_string_t *path) {

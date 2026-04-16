@@ -2,6 +2,7 @@
 
 #include <h2o.h>
 
+#include <yueah/log.h>
 #include <yueah/string.h>
 #include <yueah/types.h>
 
@@ -13,6 +14,17 @@ yueah_string_t *yueah_string_new(h2o_mem_pool_t *pool, const cstr_nullable *str,
 
   if (str)
     memcpy(new_str->data, str, size);
+
+  return new_str;
+}
+
+yueah_string_t *yueah_string_append(h2o_mem_pool_t *pool,
+                                    const yueah_string_t *dest,
+                                    const yueah_string_t *src) {
+  yueah_string_t *new_str = yueah_string_new(pool, NULL, dest->len + src->len);
+
+  memcpy(new_str->data, dest->data, dest->len);
+  memcpy(new_str->data + dest->len, src->data, src->len);
 
   return new_str;
 }
@@ -33,8 +45,14 @@ yueah_string_t *yueah_string_from_iovec(h2o_mem_pool_t *pool,
 
 h2o_iovec_t *yueah_string_to_iovec(h2o_mem_pool_t *pool,
                                    const yueah_string_t *str) {
+  if (!str) {
+    yueah_log_error("str is NULL");
+    return NULL;
+  }
+
   h2o_iovec_t *iovec = h2o_mem_alloc_pool(pool, h2o_iovec_t, 1);
-  iovec->base = (char *)str->data;
+  iovec->base = h2o_mem_alloc_pool(pool, char, str->len);
+  memcpy(iovec->base, str->data, str->len);
   iovec->len = str->len;
 
   return iovec;

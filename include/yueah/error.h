@@ -52,5 +52,4 @@ void yueah_print_error(yueah_error_t error);
  * @return A yueah_error_t containing the optional message and an OK status.
  */
 yueah_error_t yueah_success(const cstr_nullable *message_fmt, ...);
-
 #endif // !YUEAH_ERROR_H

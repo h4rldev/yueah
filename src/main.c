@@ -56,7 +56,6 @@ static int create_listener(h2o_mem_pool_t *pool, const yueah_string_t *ip,
   int r;
 
   cstr *ip_cstr = yueah_string_to_cstr(pool, ip);
-
   uv_tcp_init(ctx.loop, &listener);
   uv_ip4_addr(ip_cstr, port, &addr);
   if ((r = uv_tcp_bind(&listener, (struct sockaddr *)&addr, 0)) != 0) {
@@ -114,8 +113,10 @@ static int not_found(h2o_handler_t *handler, h2o_req_t *req) {
 }
 
 int main(int argc, char **argv) {
-  h2o_mem_pool_t *pool = {0};
-  h2o_mem_init_pool(pool);
+  h2o_mem_pool_t init_pool;
+  h2o_mem_init_pool(&init_pool);
+
+  h2o_mem_pool_t *pool = &init_pool;
 
   if (sodium_init() == -1)
     return -1;
@@ -131,6 +132,16 @@ int main(int argc, char **argv) {
   h2o_access_log_filehandle_t *logfh = NULL;
   h2o_hostconf_t *hostconf = NULL;
   h2o_pathconf_t *pathconf = NULL;
+
+  yueah_log_fname = h2o_mem_alloc_pool(pool, char, 1024);
+  snprintf(log_fname, 1024, "./logs/yueah-access-%02d-%02d-%02d.log",
+           time_buf->tm_year + 1900, time_buf->tm_mon + 1, time_buf->tm_mday);
+  snprintf(yueah_log_fname, 1024, "./logs/yueah-%02d-%02d-%02d.log",
+           time_buf->tm_year + 1900, time_buf->tm_mon + 1, time_buf->tm_mday);
+
+  logfh = h2o_access_log_open_handle("/dev/stdout", NULL,
+                                     H2O_LOGCONF_ESCAPE_APACHE);
+  register_logger(stdout);
 
   yueah_error_t error = read_config(pool, &yueah_config, NULL);
   if (error.status != OK) {
@@ -148,12 +159,6 @@ int main(int argc, char **argv) {
       goto Error;
     }
   }
-
-  yueah_log_fname = h2o_mem_alloc_pool(pool, char, 1024);
-  snprintf(log_fname, 1024, "./logs/yueah-access-%02d-%02d-%02d.log",
-           time_buf->tm_year + 1900, time_buf->tm_mon + 1, time_buf->tm_mday);
-  snprintf(yueah_log_fname, 1024, "./logs/yueah-%02d-%02d-%02d.log",
-           time_buf->tm_year + 1900, time_buf->tm_mon + 1, time_buf->tm_mday);
 
   switch (yueah_config->log_type) {
   case Both:
@@ -271,8 +276,9 @@ int main(int argc, char **argv) {
   if (matches == 0)
     yueah_log_warning("No env vars found");
 
-  yueah_log(Info, true, "yueah: running on %s:%u", yueah_config->network->ip,
-            yueah_config->network->port);
+  yueah_log(Info, true, "yueah: running on %.*s:%u",
+            (int)yueah_config->network->ip->len,
+            yueah_config->network->ip->data, yueah_config->network->port);
   uv_run(ctx.loop, UV_RUN_DEFAULT);
 
   h2o_mem_clear_pool(pool);

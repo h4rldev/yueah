@@ -310,4 +310,32 @@ typedef struct {
   int status;
 } yueah_error_response_t;
 
+/*
+ * @brief The different types of user roles.
+ *
+ * @param Poster The role that specifies that a user is a poster.
+ * @param Admin The role that specifies that a user is an admin.
+ * @param Banned The role that specifies that a user is banned.
+ */
+typedef enum {
+  Poster,
+  Admin,
+  Banned,
+} yueah_user_role_t;
+
+/*
+ * @brief A struct for storing a user.
+ *
+ * @param username The username of the user.
+ * @param userid The userid of the user.
+ * @param password_hash The password hash of the user.
+ * @param role The role of the user.
+ */
+typedef struct {
+  yueah_string_t *username;
+  yueah_string_t *userid;
+  yueah_string_t *password_hash;
+  yueah_string_t *role;
+} yueah_user_t;
+
 #endif // !YUEAH_TYPES_H

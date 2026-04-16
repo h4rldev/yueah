@@ -8,6 +8,7 @@
 #include <yueah/config.h>
 #include <yueah/error.h>
 #include <yueah/file.h>
+#include <yueah/log.h>
 #include <yueah/shared.h>
 #include <yueah/string.h>
 #include <yueah/types.h>
@@ -61,15 +62,10 @@ yueah_error_t write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
   if (!cwd || error.status != OK)
     return error;
 
-  if (!path) {
-    final_path = yueah_string_new(pool, NULL,
-                                  cwd->len + default_path->len + filename->len);
-    memcpy(final_path->data, cwd, cwd->len);
-    memcpy(final_path->data + cwd->len, default_path->data, default_path->len);
-  } else {
-    final_path = yueah_string_new(pool, NULL, path->len + filename->len);
-    memcpy(final_path->data, path->data, path->len);
-  }
+  if (!path)
+    final_path = yueah_string_append(pool, cwd, default_path);
+  else
+    final_path = path;
 
   if (!path_exist(pool, final_path)) {
     error = make_dir(pool, final_path);
@@ -77,9 +73,7 @@ yueah_error_t write_config(h2o_mem_pool_t *pool, yueah_config_t *config,
       return error;
   }
 
-  memcpy(final_path->data + cwd->len + default_path->len, filename->data,
-         filename->len);
-
+  final_path = yueah_string_append(pool, final_path, filename);
   if (config == NULL)
     return yueah_throw_error("config is NULL");
 
@@ -181,24 +175,15 @@ yueah_error_t read_config(h2o_mem_pool_t *pool, yueah_config_t **config,
   local_config = h2o_mem_alloc_pool(pool, yueah_config_t, 1);
   local_config->network = h2o_mem_alloc_pool(pool, network_config_t, 1);
 
-  if (!path) {
-    final_path = yueah_string_new(pool, NULL,
-                                  cwd->len + default_path->len + filename->len);
-    memcpy(final_path->data, cwd, cwd->len);
-    memcpy(final_path->data + cwd->len, default_path->data, default_path->len);
-    memcpy(final_path->data + cwd->len + default_path->len, filename->data,
-           filename->len);
+  if (!path)
+    final_path = yueah_string_append(pool, cwd, default_path);
+  else
+    final_path = path;
 
-    if (!path_exist(pool, final_path))
-      return yueah_throw_error("Failed to find config file");
-  } else {
-    final_path = yueah_string_new(pool, NULL, path->len + filename->len);
-    memcpy(final_path->data, path->data, path->len);
-    memcpy(final_path->data + path->len, filename->data, filename->len);
+  if (!path_exist(pool, final_path))
+    return yueah_throw_error("Failed to find config file");
 
-    if (!path_exist(pool, final_path))
-      return yueah_throw_error("Failed to find config file");
-  }
+  final_path = yueah_string_append(pool, final_path, filename);
 
   cstr *final_path_cstr = yueah_string_to_cstr(pool, final_path);
   doc = yyjson_read_file(final_path_cstr, YYJSON_READ_NOFLAG, &alc, &err);

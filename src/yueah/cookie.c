@@ -153,7 +153,7 @@ yueah_string_t *yueah_cookie_new(h2o_mem_pool_t *pool,
     path = va_arg(va, yueah_string_t *);
 
   if (mask & EXPIRES) {
-    u64 expire_time = va_arg(va, uint64_t);
+    u64 expire_time = va_arg(va, u64);
     u64 now = time(NULL);
     u64 expires_time = now + expire_time;
 
@@ -175,8 +175,9 @@ yueah_string_t *yueah_cookie_new(h2o_mem_pool_t *pool,
   if (mask & DOMAIN)
     domain = va_arg(va, yueah_string_t *);
 
-  const yueah_string_t *cookie_contents = content;
+  va_end(va);
 
+  const yueah_string_t *cookie_contents = content;
   yueah_string_t *cookie_contents_encoded =
       yueah_base64_encode(pool, cookie_contents, &cookie_error);
   if (cookie_error.status != OK) {
@@ -184,95 +185,73 @@ yueah_string_t *yueah_cookie_new(h2o_mem_pool_t *pool,
     return NULL;
   }
 
-  memcpy(cookie_header->data, cookie_name->data, cookie_name->len);
-  memcpy(cookie_header->data + cookie_name->len, "=", 1);
-  memcpy(cookie_header->data + cookie_name->len + 1,
-         cookie_contents_encoded->data, cookie_contents_encoded->len);
-  memcpy(cookie_header->data + cookie_name->len + 1 +
-             cookie_contents_encoded->len,
-         ";", 1);
-
-  u64 cookie_header_offset =
-      cookie_name->len + 1 + cookie_contents_encoded->len + 1;
+  cookie_header = yueah_string_append(pool, cookie_name, YUEAH_STR("="));
+  cookie_header =
+      yueah_string_append(pool, cookie_header, cookie_contents_encoded);
+  cookie_header = yueah_string_append(pool, cookie_header, YUEAH_STR(";"));
 
   if (same_site > -1) {
-    memcpy(cookie_header->data + cookie_header_offset, " SameSite=", 10);
-    cookie_header_offset += 10;
+    cookie_header =
+        yueah_string_append(pool, cookie_header, YUEAH_STR(" SameSite="));
     switch (same_site) {
     case LAX:
-      memcpy(cookie_header->data + cookie_header_offset, "Lax;", 4);
-      cookie_header_offset += 4;
+      cookie_header =
+          yueah_string_append(pool, cookie_header, YUEAH_STR("Lax;"));
       break;
     case STRICT:
-      memcpy(cookie_header->data + cookie_header_offset, "Strict;", 7);
-      cookie_header_offset += 7;
+      cookie_header =
+          yueah_string_append(pool, cookie_header, YUEAH_STR("Strict;"));
       break;
     case NONE:
-      memcpy(cookie_header->data + cookie_header_offset, "None;", 5);
-      cookie_header_offset += 5;
+      cookie_header =
+          yueah_string_append(pool, cookie_header, YUEAH_STR("None;"));
       break;
 
     default:
-      memcpy(cookie_header->data + cookie_header_offset, "Lax;", 4);
-      cookie_header_offset += 4;
+      cookie_header =
+          yueah_string_append(pool, cookie_header, YUEAH_STR("Lax;"));
       break;
     }
   }
 
-  if (secure) {
-    memcpy(cookie_header->data + cookie_header_offset, " Secure;", 8);
-    cookie_header_offset += 8;
-  }
+  if (secure)
+    cookie_header =
+        yueah_string_append(pool, cookie_header, YUEAH_STR(" Secure;"));
 
-  if (http_only) {
-    memcpy(cookie_header->data + cookie_header_offset, " HttpOnly;", 10);
-    cookie_header_offset += 10;
-  }
+  if (http_only)
+    cookie_header =
+        yueah_string_append(pool, cookie_header, YUEAH_STR(" HttpOnly;"));
 
   if (expires) {
-    memcpy(cookie_header->data + cookie_header_offset, " Expires=", 9);
-    cookie_header_offset += 9;
-    memcpy(cookie_header->data + cookie_header_offset, expires->data,
-           expires->len);
-    cookie_header_offset += expires->len;
-    memcpy(cookie_header->data + cookie_header_offset, ";", 1);
-    cookie_header_offset += 1;
+    cookie_header =
+        yueah_string_append(pool, cookie_header, YUEAH_STR(" Expires="));
+    cookie_header = yueah_string_append(pool, cookie_header, expires);
+    cookie_header = yueah_string_append(pool, cookie_header, YUEAH_STR(";"));
   }
 
   if (max_age > 0) {
     char fmt_buf[64];
-    u64 fmt_buf_len = snprintf(fmt_buf, 64, "%lu", max_age);
-    memcpy(cookie_header->data + cookie_header_offset, " Max-Age=", 9);
-    cookie_header_offset += 9;
-    memcpy(cookie_header->data + cookie_header_offset, fmt_buf, fmt_buf_len);
-    cookie_header_offset += fmt_buf_len;
-    memcpy(cookie_header->data + cookie_header_offset, ";", 1);
-    cookie_header_offset += 1;
+    u64 fmt_buf_len = snprintf(fmt_buf, 64, "%lu;", max_age);
+    yueah_string_t *max_age_str = yueah_string_new(pool, fmt_buf, fmt_buf_len);
+
+    cookie_header =
+        yueah_string_append(pool, cookie_header, YUEAH_STR(" Max-Age="));
+    cookie_header = yueah_string_append(pool, cookie_header, max_age_str);
   }
 
   if (domain) {
-    memcpy(cookie_header->data + cookie_header_offset, " Domain=", 8);
-    cookie_header_offset += 8;
-    memcpy(cookie_header->data + cookie_header_offset, domain->data,
-           domain->len);
-    cookie_header_offset += domain->len;
-    memcpy(cookie_header->data + cookie_header_offset, ";", 1);
-    cookie_header_offset += 1;
+    cookie_header =
+        yueah_string_append(pool, cookie_header, YUEAH_STR(" Domain="));
+    cookie_header = yueah_string_append(pool, cookie_header, domain);
+    cookie_header = yueah_string_append(pool, cookie_header, YUEAH_STR(";"));
   }
 
   if (path) {
-    memcpy(cookie_header->data + cookie_header_offset, " Path=", 7);
-    cookie_header_offset += 7;
-    memcpy(cookie_header->data + cookie_header_offset, path->data, path->len);
-    cookie_header_offset += path->len;
-    memcpy(cookie_header + cookie_header_offset, ";", 1);
-    cookie_header_offset += 1;
+    cookie_header =
+        yueah_string_append(pool, cookie_header, YUEAH_STR(" Path="));
+    cookie_header = yueah_string_append(pool, cookie_header, path);
+    cookie_header = yueah_string_append(pool, cookie_header, YUEAH_STR(";"));
   }
-
-  va_end(va);
-  memset(cookie_header + cookie_header_offset, 0, 1);
-
-  cookie_header->len = cookie_header_offset;
 
   *error = yueah_success(NULL);
   return cookie_header;
@@ -351,7 +330,7 @@ static int get_cookie_index(h2o_req_t *req, const yueah_string_t *cookie_name,
         h2o_find_header(&req->headers, H2O_TOKEN_COOKIE, cookie_cursor);
     if (cookie_index == -1) {
       yueah_log_debug("Didn't find cookie with the name %s", cookie_name);
-      return NULL;
+      return -1;
     }
 
     h2o_header_t cookie_header = req->headers.entries[cookie_index];

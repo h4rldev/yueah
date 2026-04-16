@@ -173,3 +173,9 @@ test-auth:
     " > $TEMP/h2o.yml
 
     helium http://localhost:8008 && h2o -c $TEMP/h2o.yml
+
+clean:
+    #!/usr/bin/env bash
+    [[ ! -d {{ out_dir }} ]] || rm -fr {{ out_dir }}
+    [[ ! -d {{ bin_dir }} ]] || rm -fr {{ bin_dir }}
+    [[ ! -d {{ lib_dir }} ]] || rm -fr {{ lib_dir }}
