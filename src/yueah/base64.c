@@ -37,8 +37,10 @@ yueah_string_t *yueah_base64_decode(h2o_mem_pool_t *pool,
   u64 real_len = 0;
 
   ucstr *bin_ucstr = h2o_mem_alloc_pool(pool, ucstr, len);
-  rc = sodium_base642bin(bin_ucstr, len * 64, (char *)base64->data, base64->len,
-                         NULL, &real_len, NULL,
+  cstr *base64_cstr = yueah_string_to_cstr(pool, base64);
+
+  rc = sodium_base642bin(bin_ucstr, max_out_len, base64_cstr, base64->len, NULL,
+                         &real_len, NULL,
                          sodium_base64_VARIANT_ORIGINAL_NO_PADDING);
   if (rc != 0) {
     *error = yueah_throw_error("sodium_base642bin failed: code %d", rc);

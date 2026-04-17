@@ -97,7 +97,8 @@ static yueah_user_t *get_user_userid(h2o_mem_pool_t *pool, sqlite3 *conn,
                                      yueah_error_t *error) {
   int rc = 0;
   sqlite3_stmt *stmt;
-  const char *sql = "SELECT * FROM users WHERE userid = ?;";
+  const char *sql = "SELECT username, password_hash, role FROM users "
+                    "WHERE userid = ?;";
   yueah_user_t *user_buf = h2o_mem_alloc_pool(pool, yueah_user_t, 1);
 
   rc = sqlite3_prepare_v2(conn, sql, -1, &stmt, NULL);
@@ -111,13 +112,10 @@ static yueah_user_t *get_user_userid(h2o_mem_pool_t *pool, sqlite3 *conn,
   sqlite3_bind_text(stmt, 1, userid_cstr, -1, SQLITE_STATIC);
 
   if ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-    int id = sqlite3_column_int(stmt, 0);
-    const ucstr *gotten_userid = sqlite3_column_text(stmt, 1);
-    const ucstr *username = sqlite3_column_text(stmt, 2);
-    const ucstr *password_hash = sqlite3_column_text(stmt, 3);
-    const ucstr *role = sqlite3_column_text(stmt, 5);
+    const ucstr *username = sqlite3_column_text(stmt, 0);
+    const ucstr *password_hash = sqlite3_column_text(stmt, 1);
+    const ucstr *role = sqlite3_column_text(stmt, 2);
 
-    yueah_log_debug("(%s) Gotten Userid: %s", userid_cstr, gotten_userid);
     yueah_log_debug("(%s) Gotten username: %s", userid_cstr, username);
     yueah_log_debug("(%s) Gotten password_hash: %s", userid_cstr,
                     password_hash);
@@ -129,8 +127,6 @@ static yueah_user_t *get_user_userid(h2o_mem_pool_t *pool, sqlite3 *conn,
     user_buf->password_hash = yueah_string_new(pool, (cstr *)password_hash,
                                                strlen((cstr *)password_hash));
     user_buf->role = yueah_string_new(pool, (cstr *)role, strlen((cstr *)role));
-
-    yueah_log_info("Found user at table index %d", id);
     rc = sqlite3_step(stmt);
   } else if (rc == SQLITE_DONE) {
     *error = yueah_throw_error("User %s not found", userid_cstr);
@@ -148,7 +144,7 @@ static yueah_user_t *get_user(h2o_mem_pool_t *pool, sqlite3 *conn,
                               yueah_error_t *error) {
   int rc = 0;
   sqlite3_stmt *stmt;
-  const cstr *sql = "SELECT userid, username, password_hash, role FROM users "
+  const cstr *sql = "SELECT userid, password_hash, role FROM users "
                     "WHERE username = ?;";
   yueah_user_t *user_buf = h2o_mem_alloc_pool(pool, yueah_user_t, 1);
 
@@ -164,12 +160,10 @@ static yueah_user_t *get_user(h2o_mem_pool_t *pool, sqlite3 *conn,
 
   if ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     const ucstr *userid = sqlite3_column_text(stmt, 0);
-    const ucstr *gotten_username = sqlite3_column_text(stmt, 1);
-    const ucstr *password_hash = sqlite3_column_text(stmt, 2);
-    const ucstr *role = sqlite3_column_text(stmt, 3);
+    const ucstr *password_hash = sqlite3_column_text(stmt, 1);
+    const ucstr *role = sqlite3_column_text(stmt, 2);
 
     yueah_log_debug("(%s) Gotten Userid: %s", username_cstr, userid);
-    yueah_log_debug("(%s) Gotten username: %s", username_cstr, gotten_username);
     yueah_log_debug("(%s) Gotten password_hash: %s", username_cstr,
                     password_hash);
     yueah_log_debug("(%s) Gotten role: %s", username_cstr, role);
@@ -180,7 +174,6 @@ static yueah_user_t *get_user(h2o_mem_pool_t *pool, sqlite3 *conn,
     user_buf->password_hash = yueah_string_new(pool, (cstr *)password_hash,
                                                strlen((cstr *)password_hash));
     user_buf->role = yueah_string_new(pool, (cstr *)role, strlen((cstr *)role));
-
     rc = sqlite3_step(stmt);
   } else if (rc == SQLITE_DONE) {
     *error = yueah_throw_error("User %s not found", username_cstr);
@@ -720,7 +713,7 @@ int get_refresh(h2o_handler_t *handler, h2o_req_t *req) {
 
   yueah_string_t *new_refresh_cookie =
       yueah_cookie_new(pool, YUEAH_STR("yueah_refresh"), new_refresh_token,
-                       &error, HTTP_ONLY | MAX_AGE);
+                       &error, HTTP_ONLY | MAX_AGE, 604800);
   if (!new_refresh_cookie) {
     yueah_print_error(error);
     return yueah_generic_response(req, 500,
@@ -751,8 +744,8 @@ int get_refresh(h2o_handler_t *handler, h2o_req_t *req) {
   }
 
   yueah_string_t *new_access_cookie =
-      yueah_cookie_new(pool, YUEAH_STR("yueah"), new_access_token, &error,
-                       HTTP_ONLY | MAX_AGE, 900);
+      yueah_cookie_new(pool, YUEAH_STR("yueah_session"), new_access_token,
+                       &error, HTTP_ONLY | MAX_AGE, 900);
   if (!new_access_cookie) {
     yueah_print_error(error);
     return yueah_generic_response(req, 500,

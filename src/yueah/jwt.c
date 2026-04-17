@@ -538,8 +538,9 @@ bool yueah_jwt_verify(h2o_mem_pool_t *pool, const yueah_string_t *token,
     return false;
   }
 
+  signature = yueah_string_new(pool, signature_cstr, signature_len);
   decoded_signature = yueah_base64_decode(
-      pool, signature, signature_len + crypto_auth_hmacsha512_BYTES,
+      pool, signature, signature->len + crypto_auth_hmacsha512_BYTES,
       &jwt_error);
   if (!decoded_signature) {
     *error = jwt_error;
@@ -587,9 +588,17 @@ yueah_string_t *yueah_jwt_get_sub(h2o_mem_pool_t *pool,
 
   cstr *token_cstr = yueah_string_to_cstr(pool, token);
 
+  u64 header_len = 0;
+  u64 payload_len = 0;
+
+  header_len = strchr(token_cstr, '.') - token_cstr;
+  payload_len =
+      strchr(token_cstr + header_len + 1, '.') - token_cstr - header_len - 1;
+
   sscanf(token_cstr, "%[^.].%[^.].%s", header_cstr, payload_cstr,
          signature_cstr);
 
+  payload = yueah_string_new(pool, payload_cstr, payload_len);
   payload_json = yueah_base64_decode(pool, payload, 2048, &sub_error);
   if (!payload_json || payload_json->len < 10) {
     *error = sub_error;

@@ -166,8 +166,9 @@ yueah_string_t *yueah_cookie_new(h2o_mem_pool_t *pool,
 
   if (mask & MAX_AGE) {
     max_age = va_arg(va, u64);
+    yueah_log_debug("Max-Age: %ld", max_age);
     if (max_age > 34560000) {
-      yueah_log(Error, true, "Max-Age must be less than 34560000");
+      *error = yueah_throw_error("Max-Age must be less than 34560000");
       return NULL;
     }
   }
@@ -273,7 +274,7 @@ static yueah_string_t *parse_cookie(h2o_mem_pool_t *pool,
   }
 
   yueah_string_t *cookie_content =
-      yueah_string_new(pool, NULL, strlen(res) + 1);
+      yueah_string_new(pool, NULL, strlen(res) - format_len);
   memcpy(cookie_content->data, res + format_len, strlen(res) - format_len);
 
   *error = yueah_success(NULL);
@@ -293,7 +294,7 @@ bool yueah_cookie_name_exists(h2o_mem_pool_t *pool, h2o_iovec_t cookie_header,
 
   snprintf(needle, 1024, "%s=", cookie_name_cstr);
 
-  char *after_cookie_name = strstr(cookie_header.base, needle);
+  cstr *after_cookie_name = strstr(cookie_header.base, needle);
   if (after_cookie_name == NULL) {
     *error = yueah_success(NULL);
     return false;
@@ -319,25 +320,28 @@ yueah_string_t *yueah_get_cookie_content(h2o_mem_pool_t *pool,
   return yueah_base64_decode(pool, content, 4096, error);
 }
 
-static int get_cookie_index(h2o_req_t *req, const yueah_string_t *cookie_name,
-                            yueah_error_t *error) {
-  int cookie_cursor = -1;
-  int wanted_cookie_index = 0;
+static ssize_t get_cookie_index(h2o_req_t *req,
+                                const yueah_string_t *cookie_name,
+                                yueah_error_t *error) {
+  ssize_t cookie_cursor = -1;
+  ssize_t wanted_cookie_index = 0;
   yueah_error_t cookie_error = yueah_success(NULL);
 
   do {
-    int cookie_index =
+    ssize_t cookie_index =
         h2o_find_header(&req->headers, H2O_TOKEN_COOKIE, cookie_cursor);
     if (cookie_index == -1) {
-      yueah_log_debug("Didn't find cookie with the name %s", cookie_name);
+      *error = yueah_throw_error("Didn't find cookie with the name %.*s",
+                                 (int)cookie_name->len, cookie_name->data);
       return -1;
     }
 
     h2o_header_t cookie_header = req->headers.entries[cookie_index];
     if (yueah_cookie_name_exists(&req->pool, cookie_header.value, cookie_name,
                                  &cookie_error)) {
-      yueah_log_debug("Found cookie with the name %s at index %d, cursor %d",
-                      cookie_name, cookie_index, cookie_cursor);
+      yueah_log_debug("Found cookie with the name %.*s at index %d, cursor %d",
+                      (int)cookie_name->len, cookie_name->data, cookie_index,
+                      cookie_cursor);
       wanted_cookie_index = cookie_index;
     } else if (cookie_error.status != OK) {
       *error = cookie_error;
